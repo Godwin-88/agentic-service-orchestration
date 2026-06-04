@@ -1,0 +1,153 @@
+{
+  "name": "call-anomaly-diagnostics",
+  "nodes": [
+    {
+      "parameters": {
+        "path": "trigger/anomaly-detected",
+        "method": "POST",
+        "authentication": "none"
+      },
+      "name": "Webhook - Anomaly Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        250,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://host.docker.internal:8000/agents/diagnose-anomaly",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n   \"anomaly_id\": \"{{ $json.body.anomaly_id }}\",\n   \"anomaly_type\": \"{{ $json.body.anomaly_type }}\",\n   \"details\": \"{{ $json.body.anomaly_description }}\"\n}",
+        "options": {}
+      },
+      "name": "HTTP - LangGraph Diagnostic Agent",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 3,
+      "position": [
+        450,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "schema": "public",
+        "table": "anomalies",
+        "whereColumns": "id",
+        "fieldsUi": {
+          "values": [
+            {
+              "fieldName": "ai_diagnostic",
+              "fieldValue": "={{ $json.diagnostic_text }}"
+            },
+            {
+              "fieldName": "severity",
+              "fieldValue": "={{ $json.inferred_severity }}"
+            }
+          ]
+        }
+      },
+      "name": "DB - Update Anomaly Diagnostic",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 1,
+      "position": [
+        650,
+        300
+      ],
+      "credentials": {
+        "postgres": "PostgreSQL - Marketing Hub"
+      }
+    },
+    {
+      "parameters": {
+        "operation": "insert",
+        "schema": "public",
+        "table": "action_log",
+        "columns": "action_type,resource_type,resource_id,actor,actor_type,status,details",
+        "fieldsUi": {
+          "values": [
+            {
+              "fieldName": "action_type",
+              "fieldValue": "agent_call"
+            },
+            {
+              "fieldName": "resource_type",
+              "fieldValue": "anomaly"
+            },
+            {
+              "fieldName": "resource_id",
+              "fieldValue": "={{ $node['Webhook - Anomaly Trigger'].json.body.anomaly_id }}"
+            },
+            {
+              "fieldName": "actor",
+              "fieldValue": "diagnostic_agent"
+            },
+            {
+              "fieldName": "actor_type",
+              "fieldValue": "agent"
+            },
+            {
+              "fieldName": "status",
+              "fieldValue": "success"
+            },
+            {
+              "fieldName": "details",
+              "fieldValue": "={{ { \"severity\": $node['HTTP - LangGraph Diagnostic Agent'].json.inferred_severity } }}"
+            }
+          ]
+        }
+      },
+      "name": "DB - Log Action",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 1,
+      "position": [
+        850,
+        300
+      ],
+      "credentials": {
+        "postgres": "PostgreSQL - Marketing Hub"
+      }
+    }
+  ],
+  "connections": {
+    "Webhook - Anomaly Trigger": {
+      "main": [
+        [
+          {
+            "node": "HTTP - LangGraph Diagnostic Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP - LangGraph Diagnostic Agent": {
+      "main": [
+        [
+          {
+            "node": "DB - Update Anomaly Diagnostic",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "DB - Update Anomaly Diagnostic": {
+      "main": [
+        [
+          {
+            "node": "DB - Log Action",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {}
+}

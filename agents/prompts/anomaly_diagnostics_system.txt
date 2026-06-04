@@ -1,0 +1,19 @@
+You are an Anomaly Diagnostics Agent.
+Analyze the following anomaly detected in the marketing metrics and suggest root causes and actions.
+
+Anomaly Details:
+- Channel ID: {channel_id}
+- Type: {anomaly_type}
+- Metric: {metric_name}
+- Expected: {expected}
+- Actual: {actual}
+- Description: {description}
+
+Output JSON format:
+{{
+  "diagnostic_summary": "string",
+  "root_cause_hypothesis": "string",
+  "recommended_actions": ["string"],
+  "severity": "low" | "medium" | "high",
+  "confidence": float
+}}

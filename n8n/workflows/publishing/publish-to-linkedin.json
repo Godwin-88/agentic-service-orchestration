@@ -1,0 +1,151 @@
+{
+  "name": "publish-to-linkedin",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "hours",
+              "interval": 1
+            }
+          ]
+        }
+      },
+      "name": "Trigger - Hourly",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1,
+      "position": [250, 300]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT p.id, p.content_text, p.media_urls, p.format_metadata, c.platform, c.access_token_encrypted, c.account_id FROM posts p JOIN channels c ON p.channel_id = c.id WHERE p.status = 'scheduled' AND p.scheduled_at <= NOW() AND c.platform = 'linkedin';"
+      },
+      "name": "Query - Scheduled LinkedIn Posts",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 1,
+      "position": [450, 300],
+      "credentials": {
+        "postgres": "PostgreSQL - Marketing Hub"
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.linkedin.com/v2/ugcPosts",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $json.access_token_encrypted }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"author\": \"urn:li:person:{{ $json.account_id }}\",\n  \"lifecycleState\": \"PUBLISHED\",\n  \"specificContent\": {\n    \"com.linkedin.ugc.ShareContent\": {\n      \"shareCommentary\": {\n        \"text\": \"{{ $json.content_text }}\"\n      },\n      \"shareMediaCategory\": \"NONE\"\n    }\n  },\n  \"visibility\": {\n    \"com.linkedin.ugc.MemberNetworkVisibility\": \"PUBLIC\"\n  }\n}",
+        "options": {}
+      },
+      "name": "API - LinkedIn Publish",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 3,
+      "position": [650, 300]
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "schema": "public",
+        "table": "posts",
+        "whereColumns": "id",
+        "fieldsUi": {
+          "values": [
+            {
+              "fieldName": "status",
+              "fieldValue": "published"
+            },
+            {
+              "fieldName": "published_at",
+              "fieldValue": "={{ new Date().toISOString() }}"
+            },
+            {
+              "fieldName": "external_post_id",
+              "fieldValue": "={{ $node['API - LinkedIn Publish'].json.id }}"
+            }
+          ]
+        }
+      },
+      "name": "DB - Update Post Status",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 1,
+      "position": [850, 300],
+      "credentials": {
+        "postgres": "PostgreSQL - Marketing Hub"
+      }
+    },
+    {
+      "parameters": {
+        "operation": "insert",
+        "schema": "public",
+        "table": "action_log",
+        "columns": "action_type,resource_type,resource_id,actor,actor_type,status,details",
+        "fieldsUi": {
+          "values": [
+            {
+              "fieldName": "action_type",
+              "fieldValue": "post_publishing"
+            },
+            {
+              "fieldName": "resource_type",
+              "fieldValue": "post"
+            },
+            {
+              "fieldName": "resource_id",
+              "fieldValue": "={{ $node['Query - Scheduled LinkedIn Posts'].json.id }}"
+            },
+            {
+              "fieldName": "actor",
+              "fieldValue": "n8n"
+            },
+            {
+              "fieldName": "actor_type",
+              "fieldValue": "system"
+            },
+            {
+              "fieldName": "status",
+              "fieldValue": "success"
+            },
+            {
+              "fieldName": "details",
+              "fieldValue": "={{ JSON.stringify({ platform: 'linkedin', external_id: $node['API - LinkedIn Publish'].json.id }) }}"
+            }
+          ]
+        }
+      },
+      "name": "DB - Log Action",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 1,
+      "position": [1050, 300],
+      "credentials": {
+        "postgres": "PostgreSQL - Marketing Hub"
+      }
+    }
+  ],
+  "connections": {
+    "Trigger - Hourly": {
+      "main": [[{ "node": "Query - Scheduled LinkedIn Posts", "type": "main", "index": 0 }]]
+    },
+    "Query - Scheduled LinkedIn Posts": {
+      "main": [[{ "node": "API - LinkedIn Publish", "type": "main", "index": 0 }]]
+    },
+    "API - LinkedIn Publish": {
+      "main": [[{ "node": "DB - Update Post Status", "type": "main", "index": 0 }]]
+    },
+    "DB - Update Post Status": {
+      "main": [[{ "node": "DB - Log Action", "type": "main", "index": 0 }]]
+    }
+  },
+  "active": false,
+  "settings": {}
+}

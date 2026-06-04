@@ -1,0 +1,208 @@
+{
+  "name": "internal-pipeline-manager",
+  "nodes": [
+    {
+      "parameters": {
+        "path": "trigger/pipeline-update",
+        "method": "POST",
+        "authentication": "none"
+      },
+      "name": "Webhook - Pipeline Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        250,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "conditions": [
+            {
+              "id": "cond_hot",
+              "leftValue": "={{ $json.body.lead_score }}",
+              "rightValue": 80,
+              "operator": {
+                "type": "number",
+                "operation": "larger"
+              }
+            }
+          ],
+          "combinator": "and"
+        }
+      },
+      "name": "If - Lead is Hot",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        450,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "=UPDATE leads SET lead_stage = 'product_interest' WHERE id = {{ $json.body.lead_id }} RETURNING id;"
+      },
+      "name": "DB - Update Stage to Hot",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 1,
+      "position": [
+        650,
+        200
+      ],
+      "credentials": {
+        "postgres": "PostgreSQL - Marketing Hub"
+      }
+    },
+    {
+      "parameters": {
+        "operation": "insert",
+        "schema": "public",
+        "table": "tasks",
+        "columns": "lead_id,title,description,task_type,priority,status,created_by",
+        "fieldsUi": {
+          "values": [
+            {
+              "fieldName": "lead_id",
+              "fieldValue": "={{ $json.body.lead_id }}"
+            },
+            {
+              "fieldName": "title",
+              "fieldValue": "Manual Sales Reach-out Required"
+            },
+            {
+              "fieldName": "description",
+              "fieldValue": "Lead score exceeded 80. AI recommends immediate human intervention."
+            },
+            {
+              "fieldName": "task_type",
+              "fieldValue": "call"
+            },
+            {
+              "fieldName": "priority",
+              "fieldValue": "urgent"
+            },
+            {
+              "fieldName": "status",
+              "fieldValue": "todo"
+            },
+            {
+              "fieldName": "created_by",
+              "fieldValue": "system"
+            }
+          ]
+        }
+      },
+      "name": "DB - Create Urgent Task",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 1,
+      "position": [
+        850,
+        200
+      ],
+      "credentials": {
+        "postgres": "PostgreSQL - Marketing Hub"
+      }
+    },
+    {
+      "parameters": {
+        "operation": "insert",
+        "schema": "public",
+        "table": "action_log",
+        "columns": "action_type,resource_type,resource_id,actor,actor_type,status,details",
+        "fieldsUi": {
+          "values": [
+            {
+              "fieldName": "action_type",
+              "fieldValue": "pipeline_transition"
+            },
+            {
+              "fieldName": "resource_type",
+              "fieldValue": "lead"
+            },
+            {
+              "fieldName": "resource_id",
+              "fieldValue": "={{ $json.body.lead_id }}"
+            },
+            {
+              "fieldName": "actor",
+              "fieldValue": "n8n"
+            },
+            {
+              "fieldName": "actor_type",
+              "fieldValue": "system"
+            },
+            {
+              "fieldName": "status",
+              "fieldValue": "success"
+            },
+            {
+              "fieldName": "details",
+              "fieldValue": "={{ JSON.stringify({ new_stage: 'product_interest', score: $json.body.lead_score }) }}"
+            }
+          ]
+        }
+      },
+      "name": "DB - Log Action",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 1,
+      "position": [
+        1050,
+        300
+      ],
+      "credentials": {
+        "postgres": "PostgreSQL - Marketing Hub"
+      }
+    }
+  ],
+  "connections": {
+    "Webhook - Pipeline Trigger": {
+      "main": [
+        [
+          {
+            "node": "If - Lead is Hot",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If - Lead is Hot": {
+      "main": [
+        [
+          {
+            "node": "DB - Update Stage to Hot",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "DB - Update Stage to Hot": {
+      "main": [
+        [
+          {
+            "node": "DB - Create Urgent Task",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "DB - Create Urgent Task": {
+      "main": [
+        [
+          {
+            "node": "DB - Log Action",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {}
+}

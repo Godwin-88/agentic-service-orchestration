@@ -1,0 +1,69 @@
+{
+  "name": "crm-contact-orchestrator",
+  "nodes": [
+    {
+      "parameters": {
+        "path": "trigger/crm-handoff",
+        "method": "POST",
+        "authentication": "none"
+      },
+      "name": "Webhook - Handoff Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [100, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://host.docker.internal:8000/agents/crm/build-contact",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"lead_id\": \"{{ $json.body.lead_id }}\",\n  \"lead_details\": {{ JSON.stringify($json.body) }}\n}",
+        "options": {}
+      },
+      "name": "HTTP - Agent G1 (Builder)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 3,
+      "position": [300, 300]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO contacts (lead_id, email, phone, lifecycle_stage, health_score) VALUES ('{{ $node['Webhook - Handoff Trigger'].json.body.lead_id }}', '{{ $node['HTTP - Agent G1 (Builder)'].json.crm_response.email }}', '{{ $node['Webhook - Handoff Trigger'].json.body.phone }}', '{{ $node['HTTP - Agent G1 (Builder)'].json.crm_response.lifecycle_stage }}', {{ $node['HTTP - Agent G1 (Builder)'].json.crm_response.health_score }}) ON CONFLICT (email) DO UPDATE SET lifecycle_stage = EXCLUDED.lifecycle_stage, health_score = EXCLUDED.health_score RETURNING id;"
+      },
+      "name": "DB - Create Contact",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 1,
+      "position": [500, 300],
+      "credentials": {
+        "postgres": "PostgreSQL - Marketing Hub"
+      }
+    }
+  ],
+  "connections": {
+    "Webhook - Handoff Trigger": {
+      "main": [
+        [
+          {
+            "node": "HTTP - Agent G1 (Builder)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP - Agent G1 (Builder)": {
+      "main": [
+        [
+          {
+            "node": "DB - Create Contact",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {}
+}

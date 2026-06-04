@@ -1,0 +1,151 @@
+{
+  "name": "publish-to-whatsapp",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "hours",
+              "interval": 1
+            }
+          ]
+        }
+      },
+      "name": "Trigger - Hourly",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1,
+      "position": [250, 300]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT p.id, p.content_text, p.media_urls, p.format_metadata, c.platform, c.access_token_encrypted, c.account_id FROM posts p JOIN channels c ON p.channel_id = c.id WHERE p.status = 'scheduled' AND p.scheduled_at <= NOW() AND c.platform = 'whatsapp';"
+      },
+      "name": "Query - Scheduled WhatsApp Posts",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 1,
+      "position": [450, 300],
+      "credentials": {
+        "postgres": "PostgreSQL - Marketing Hub"
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://graph.facebook.com/v19.0/{{ $json.account_id }}/messages",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $json.access_token_encrypted }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"messaging_product\": \"whatsapp\",\n  \"to\": \"{{ $json.format_metadata.recipient_phone }}\",\n  \"type\": \"text\",\n  \"text\": {\n    \"body\": \"{{ $json.content_text }}\"\n  }\n}",
+        "options": {}
+      },
+      "name": "API - WhatsApp Publish",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 3,
+      "position": [650, 300]
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "schema": "public",
+        "table": "posts",
+        "whereColumns": "id",
+        "fieldsUi": {
+          "values": [
+            {
+              "fieldName": "status",
+              "fieldValue": "published"
+            },
+            {
+              "fieldName": "published_at",
+              "fieldValue": "={{ new Date().toISOString() }}"
+            },
+            {
+              "fieldName": "external_post_id",
+              "fieldValue": "={{ $node['API - WhatsApp Publish'].json.messages[0].id }}"
+            }
+          ]
+        }
+      },
+      "name": "DB - Update Post Status",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 1,
+      "position": [850, 300],
+      "credentials": {
+        "postgres": "PostgreSQL - Marketing Hub"
+      }
+    },
+    {
+      "parameters": {
+        "operation": "insert",
+        "schema": "public",
+        "table": "action_log",
+        "columns": "action_type,resource_type,resource_id,actor,actor_type,status,details",
+        "fieldsUi": {
+          "values": [
+            {
+              "fieldName": "action_type",
+              "fieldValue": "post_publishing"
+            },
+            {
+              "fieldName": "resource_type",
+              "fieldValue": "post"
+            },
+            {
+              "fieldName": "resource_id",
+              "fieldValue": "={{ $node['Query - Scheduled WhatsApp Posts'].json.id }}"
+            },
+            {
+              "fieldName": "actor",
+              "fieldValue": "n8n"
+            },
+            {
+              "fieldName": "actor_type",
+              "fieldValue": "system"
+            },
+            {
+              "fieldName": "status",
+              "fieldValue": "success"
+            },
+            {
+              "fieldName": "details",
+              "fieldValue": "={{ JSON.stringify({ platform: 'whatsapp', external_id: $node['API - WhatsApp Publish'].json.messages[0].id }) }}"
+            }
+          ]
+        }
+      },
+      "name": "DB - Log Action",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 1,
+      "position": [1050, 300],
+      "credentials": {
+        "postgres": "PostgreSQL - Marketing Hub"
+      }
+    }
+  ],
+  "connections": {
+    "Trigger - Hourly": {
+      "main": [[{ "node": "Query - Scheduled WhatsApp Posts", "type": "main", "index": 0 }]]
+    },
+    "Query - Scheduled WhatsApp Posts": {
+      "main": [[{ "node": "API - WhatsApp Publish", "type": "main", "index": 0 }]]
+    },
+    "API - WhatsApp Publish": {
+      "main": [[{ "node": "DB - Update Post Status", "type": "main", "index": 0 }]]
+    },
+    "DB - Update Post Status": {
+      "main": [[{ "node": "DB - Log Action", "type": "main", "index": 0 }]]
+    }
+  },
+  "active": false,
+  "settings": {}
+}

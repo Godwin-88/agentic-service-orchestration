@@ -1,0 +1,126 @@
+{
+  "name": "ingest-youtube-nightly",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "days",
+              "interval": 1,
+              "triggerAtHour": 2,
+              "triggerAtMinute": 30
+            }
+          ]
+        }
+      },
+      "name": "Trigger - Daily 2:30 AM UTC",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1,
+      "position": [250, 300]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT id AS channel_id, account_id FROM channels WHERE platform = 'youtube' AND connected_status = 'connected' LIMIT 5;"
+      },
+      "name": "Query - Connected YouTube",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 1,
+      "position": [450, 300],
+      "credentials": {
+        "postgres": "PostgreSQL - Marketing Hub"
+      }
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "https://www.googleapis.com/youtube/v3/search?channelId={{ $json.account_id }}&part=snippet&type=video&maxResults=50&order=date&key={{ $env.YOUTUBE_API_KEY }}",
+        "authentication": "none",
+        "options": {}
+      },
+      "name": "API - YouTube Videos",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 3,
+      "position": [650, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const items = $input.all();\nconst transformed = [];\n\nitems.forEach((item) => {\n  const videos = item.json.items || [];\n  const channelId = item.json.channel_id;\n  \n  videos.forEach(video => {\n    transformed.push({\n      json: {\n        channel_id: channelId,\n        platform: 'youtube',\n        video_id: video.id?.videoId,\n        metric_date: new Date().toISOString().split('T')[0],\n        reach: 0,\n        impressions: 0,\n        engagements: 0,\n        clicks: 0,\n        likes: 0,\n        comments: 0,\n        shares: 0,\n        saves: 0,\n        video_views: 0,\n        watch_time_seconds: 0,\n        profile_visits: 0,\n        follower_count: 0,\n        created_at: new Date().toISOString()\n      }\n    });\n  });\n});\n\nreturn transformed;"
+      },
+      "name": "Transform - YouTube Metrics",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [850, 300]
+    },
+    {
+      "parameters": {
+        "operation": "insert",
+        "schema": "public",
+        "table": "post_metrics",
+        "columns": "channel_id,metric_date,reach,impressions,engagements,clicks,likes,comments,shares,saves,video_views,watch_time_seconds,profile_visits,follower_count,created_at",
+        "fieldsUi": {
+          "values": [
+            { "fieldName": "channel_id", "fieldValue": "={{ $json.channel_id }}" },
+            { "fieldName": "metric_date", "fieldValue": "={{ $json.metric_date }}" },
+            { "fieldName": "reach", "fieldValue": "={{ $json.reach }}" },
+            { "fieldName": "impressions", "fieldValue": "={{ $json.impressions }}" },
+            { "fieldName": "engagements", "fieldValue": "={{ $json.engagements }}" },
+            { "fieldName": "clicks", "fieldValue": "={{ $json.clicks }}" },
+            { "fieldName": "likes", "fieldValue": "={{ $json.likes }}" },
+            { "fieldName": "comments", "fieldValue": "={{ $json.comments }}" },
+            { "fieldName": "shares", "fieldValue": "={{ $json.shares }}" },
+            { "fieldName": "saves", "fieldValue": "={{ $json.saves }}" },
+            { "fieldName": "video_views", "fieldValue": "={{ $json.video_views }}" },
+            { "fieldName": "watch_time_seconds", "fieldValue": "={{ $json.watch_time_seconds }}" },
+            { "fieldName": "profile_visits", "fieldValue": "={{ $json.profile_visits }}" },
+            { "fieldName": "follower_count", "fieldValue": "={{ $json.follower_count }}" },
+            { "fieldName": "created_at", "fieldValue": "={{ $json.created_at }}" }
+          ]
+        }
+      },
+      "name": "DB - Insert Metrics",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 1,
+      "position": [1050, 300],
+      "credentials": {
+        "postgres": "PostgreSQL - Marketing Hub"
+      }
+    },
+    {
+      "parameters": {
+        "operation": "insert",
+        "schema": "public",
+        "table": "action_log",
+        "columns": "action_type,resource_type,actor,actor_type,status,details,created_at",
+        "fieldsUi": {
+          "values": [
+            { "fieldName": "action_type", "fieldValue": "workflow_execution" },
+            { "fieldName": "resource_type", "fieldValue": "ingestion" },
+            { "fieldName": "actor", "fieldValue": "n8n" },
+            { "fieldName": "actor_type", "fieldValue": "system" },
+            { "fieldName": "status", "fieldValue": "success" },
+            { "fieldName": "details", "fieldValue": "={{ JSON.stringify({ workflow: 'ingest-youtube-nightly', metrics_count: $input.all().length }) }}" },
+            { "fieldName": "created_at", "fieldValue": "=now()" }
+          ]
+        }
+      },
+      "name": "DB - Log Success",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 1,
+      "position": [1250, 300],
+      "credentials": {
+        "postgres": "PostgreSQL - Marketing Hub"
+      }
+    }
+  ],
+  "connections": {
+    "Trigger - Daily 2:30 AM UTC": { "main": [[{ "node": "Query - Connected YouTube", "type": "main", "index": 0 }]] },
+    "Query - Connected YouTube": { "main": [[{ "node": "API - YouTube Videos", "type": "main", "index": 0 }]] },
+    "API - YouTube Videos": { "main": [[{ "node": "Transform - YouTube Metrics", "type": "main", "index": 0 }]] },
+    "Transform - YouTube Metrics": { "main": [[{ "node": "DB - Insert Metrics", "type": "main", "index": 0 }]] },
+    "DB - Insert Metrics": { "main": [[{ "node": "DB - Log Success", "type": "main", "index": 0 }]] }
+  },
+  "active": false,
+  "settings": {}
+}

@@ -1,0 +1,127 @@
+{
+  "name": "call-lead-scorer",
+  "nodes": [
+    {
+      "parameters": {
+        "path": "trigger/lead-score",
+        "method": "POST",
+        "authentication": "none"
+      },
+      "name": "Webhook - Lead Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [250, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://host.docker.internal:8000/agents/score-lead",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"lead_id\": \"{{ $json.body.lead_id }}\",\n  \"email\": \"{{ $json.body.email }}\",\n  \"source_channel\": \"{{ $json.body.source_channel || 'web_form' }}\",\n  \"interaction_history\": {{ JSON.stringify($json.body.interaction_history || []) }},\n  \"content_interests\": {{ JSON.stringify($json.body.content_interests || []) }}\n}",
+        "authentication": "headerAuth",
+        "options": {}
+      },
+      "name": "HTTP - LangGraph Scorer",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 3,
+      "position": [450, 300],
+      "credentials": {
+        "headerAuth": {
+          "id": "YOUR_CREDENTIAL_ID",
+          "name": "Header Auth"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "schema": "public",
+        "table": "leads",
+        "whereColumns": "id",
+        "fieldsUi": {
+          "values": [
+            {
+              "fieldName": "lead_score",
+              "fieldValue": "={{ $json.score }}"
+            },
+            {
+              "fieldName": "score_updated_at",
+              "fieldValue": "={{ new Date().toISOString() }}"
+            }
+          ]
+        }
+      },
+      "name": "DB - Update Lead Score",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 1,
+      "position": [650, 300],
+      "credentials": {
+        "postgres": "PostgreSQL - Marketing Hub"
+      }
+    },
+    {
+      "parameters": {
+        "operation": "insert",
+        "schema": "public",
+        "table": "action_log",
+        "columns": "action_type,resource_type,resource_id,actor,actor_type,status,details",
+        "fieldsUi": {
+          "values": [
+            { "fieldName": "action_type", "fieldValue": "agent_call" },
+            { "fieldName": "resource_type", "fieldValue": "lead" },
+            { "fieldName": "resource_id", "fieldValue": "={{ $node['Webhook - Lead Trigger'].json.body.lead_id }}" },
+            { "fieldName": "actor", "fieldValue": "lead_scorer_agent" },
+            { "fieldName": "actor_type", "fieldValue": "agent" },
+            { "fieldName": "status", "fieldValue": "success" },
+            { "fieldName": "details", "fieldValue": "={{ { \"score\": $node['HTTP - LangGraph Scorer'].json.score } }}" }
+          ]
+        }
+      },
+      "name": "DB - Log Action",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 1,
+      "position": [850, 300],
+      "credentials": {
+        "postgres": "PostgreSQL - Marketing Hub"
+      }
+    }
+  ],
+  "connections": {
+    "Webhook - Lead Trigger": {
+      "main": [
+        [
+          {
+            "node": "HTTP - LangGraph Scorer",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP - LangGraph Scorer": {
+      "main": [
+        [
+          {
+            "node": "DB - Update Lead Score",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "DB - Update Lead Score": {
+      "main": [
+        [
+          {
+            "node": "DB - Log Action",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {}
+}

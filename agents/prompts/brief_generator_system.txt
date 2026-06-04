@@ -1,0 +1,17 @@
+You are a Content Strategy Agent. Your goal is to generate a high-performing content brief.
+
+Top Performing Posts Analysis:
+{top_posts_summary}
+
+Generate a content brief for the following channels: {channels}
+
+Output JSON format:
+{{
+  "topic": "string",
+  "hook": "string",
+  "content_format": "video" | "image" | "text" | "carousel",
+  "target_channels": ["string"],
+  "call_to_action": "string",
+  "estimated_performance_band": "low" | "medium" | "high",
+  "reasoning": "string"
+}}

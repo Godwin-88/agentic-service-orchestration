@@ -1,0 +1,796 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Digital Marketing Hub — Technical Specification</title>
+<style>
+  :root {
+    --ink: #0f0f0e;
+    --ink2: #3a3936;
+    --ink3: #6b6960;
+    --paper: #faf9f6;
+    --paper2: #f2f0eb;
+    --paper3: #e8e5de;
+    --accent: #1a4fd6;
+    --accent2: #0e3399;
+    --green: #14532d;
+    --green-bg: #dcfce7;
+    --amber: #78350f;
+    --amber-bg: #fef3c7;
+    --red: #7f1d1d;
+    --red-bg: #fee2e2;
+    --teal: #134e4a;
+    --teal-bg: #ccfbf1;
+    --purple: #3b0764;
+    --purple-bg: #f3e8ff;
+    --border: #d6d2c8;
+    --font-sans: 'Georgia', 'Times New Roman', serif;
+    --font-mono: 'Courier New', monospace;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: var(--paper);
+    color: var(--ink);
+    font-family: var(--font-sans);
+    font-size: 15px;
+    line-height: 1.75;
+    max-width: 960px;
+    margin: 0 auto;
+    padding: 48px 40px 80px;
+  }
+
+  /* ── COVER ── */
+  .cover {
+    border-bottom: 2px solid var(--ink);
+    padding-bottom: 40px;
+    margin-bottom: 56px;
+  }
+  .doc-label {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--ink3);
+    margin-bottom: 20px;
+  }
+  h1 {
+    font-size: 36px;
+    font-weight: 700;
+    line-height: 1.15;
+    letter-spacing: -0.02em;
+    margin-bottom: 16px;
+  }
+  .cover-sub {
+    font-size: 17px;
+    color: var(--ink2);
+    max-width: 620px;
+    line-height: 1.6;
+  }
+  .meta-row {
+    display: flex;
+    gap: 32px;
+    margin-top: 28px;
+    flex-wrap: wrap;
+  }
+  .meta-item { font-size: 13px; color: var(--ink3); }
+  .meta-item strong { color: var(--ink); display: block; font-size: 12px; text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 2px; }
+
+  /* ── TOC ── */
+  .toc {
+    background: var(--paper2);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 28px 32px;
+    margin-bottom: 56px;
+  }
+  .toc h2 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.1em; margin-bottom: 16px; color: var(--ink3); }
+  .toc ol { list-style: none; counter-reset: toc; }
+  .toc li { counter-increment: toc; display: flex; align-items: baseline; gap: 8px; margin-bottom: 6px; }
+  .toc li::before { content: counter(toc, decimal-leading-zero); font-family: var(--font-mono); font-size: 11px; color: var(--ink3); min-width: 24px; }
+  .toc a { color: var(--accent); text-decoration: none; font-size: 14px; }
+  .toc a:hover { text-decoration: underline; }
+
+  /* ── SECTIONS ── */
+  section { margin-bottom: 64px; }
+  h2 {
+    font-size: 22px;
+    font-weight: 700;
+    letter-spacing: -0.01em;
+    margin-bottom: 20px;
+    padding-bottom: 10px;
+    border-bottom: 1.5px solid var(--border);
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  .sec-num { font-family: var(--font-mono); font-size: 13px; color: var(--ink3); }
+  h3 { font-size: 17px; font-weight: 700; margin: 28px 0 12px; }
+  h4 { font-size: 14px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: var(--ink2); margin: 20px 0 8px; }
+  p { margin-bottom: 14px; color: var(--ink2); }
+
+  /* ── VERDICT BOX ── */
+  .verdict {
+    background: var(--ink);
+    color: #faf9f6;
+    border-radius: 6px;
+    padding: 28px 32px;
+    margin: 32px 0;
+  }
+  .verdict-label { font-family: var(--font-mono); font-size: 11px; letter-spacing: 0.1em; text-transform: uppercase; color: #9b9891; margin-bottom: 10px; }
+  .verdict h3 { font-size: 20px; color: #faf9f6; margin: 0 0 10px; }
+  .verdict p { color: #c8c4bc; margin-bottom: 0; font-size: 14px; }
+
+  /* ── COMPARISON TABLE ── */
+  .compare-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 20px;
+    margin: 24px 0;
+  }
+  .compare-card {
+    border: 1.5px solid var(--border);
+    border-radius: 6px;
+    overflow: hidden;
+  }
+  .compare-card.winner { border-color: var(--accent); border-width: 2px; }
+  .compare-header {
+    padding: 16px 20px;
+    background: var(--paper2);
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  .compare-card.winner .compare-header { background: var(--accent); }
+  .compare-card.winner .compare-header * { color: white !important; }
+  .compare-header h3 { margin: 0; font-size: 15px; }
+  .compare-header .tag { font-family: var(--font-mono); font-size: 10px; padding: 2px 8px; border-radius: 20px; background: var(--paper3); color: var(--ink3); }
+  .compare-card.winner .compare-header .tag { background: rgba(255,255,255,0.2); color: white; }
+  .compare-body { padding: 16px 20px; }
+  .trait { display: flex; gap: 10px; padding: 8px 0; border-bottom: 1px solid var(--paper3); font-size: 13px; }
+  .trait:last-child { border-bottom: none; }
+  .trait-label { color: var(--ink3); min-width: 120px; }
+  .trait-val { color: var(--ink2); font-weight: 600; }
+  .good { color: var(--green); }
+  .bad { color: var(--red); }
+  .mid { color: var(--amber); }
+
+  /* ── CAPABILITY MAPPING ── */
+  .cap-table { width: 100%; border-collapse: collapse; font-size: 13px; margin: 16px 0 24px; }
+  .cap-table th { text-align: left; padding: 8px 12px; background: var(--ink); color: var(--paper); font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; font-weight: 600; }
+  .cap-table td { padding: 9px 12px; border-bottom: 1px solid var(--border); vertical-align: top; }
+  .cap-table tr:hover td { background: var(--paper2); }
+  .dicm { font-family: var(--font-mono); font-size: 11px; color: var(--ink3); }
+  .domain-badge {
+    display: inline-block;
+    font-size: 10px;
+    font-family: var(--font-mono);
+    padding: 2px 7px;
+    border-radius: 20px;
+    white-space: nowrap;
+  }
+  .d-marcom { background: var(--purple-bg); color: var(--purple); }
+  .d-channel { background: var(--teal-bg); color: var(--teal); }
+  .d-intel { background: var(--amber-bg); color: var(--amber); }
+  .d-auto { background: var(--green-bg); color: var(--green); }
+  .d-svc { background: #dbeafe; color: #1e3a8a; }
+  .d-exp { background: #fce7f3; color: #831843; }
+
+  /* ── MODULE BLOCKS ── */
+  .module {
+    border-left: 3px solid var(--accent);
+    padding: 16px 20px;
+    margin: 20px 0;
+    background: var(--paper2);
+    border-radius: 0 4px 4px 0;
+  }
+  .module-title { font-weight: 700; font-size: 15px; margin-bottom: 6px; }
+  .module ul { padding-left: 18px; font-size: 13px; color: var(--ink2); }
+  .module li { margin-bottom: 4px; }
+  .module .stack { font-family: var(--font-mono); font-size: 11px; color: var(--ink3); margin-top: 8px; }
+
+  /* ── TECH STACK ── */
+  .stack-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 14px;
+    margin: 20px 0;
+  }
+  .stack-card {
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 14px 16px;
+    background: var(--paper);
+  }
+  .stack-card h4 { margin: 0 0 8px; font-size: 11px; }
+  .stack-card .tools { font-size: 13px; color: var(--ink2); line-height: 1.6; }
+  .stack-card .tools strong { color: var(--accent); font-size: 12px; }
+
+  /* ── PHASE TIMELINE ── */
+  .phases { position: relative; padding-left: 32px; }
+  .phases::before { content: ''; position: absolute; left: 10px; top: 8px; bottom: 0; width: 1.5px; background: var(--border); }
+  .phase { position: relative; margin-bottom: 32px; }
+  .phase::before { content: attr(data-n); position: absolute; left: -32px; width: 22px; height: 22px; border-radius: 50%; background: var(--ink); color: var(--paper); font-size: 11px; font-family: var(--font-mono); display: flex; align-items: center; justify-content: center; top: 2px; }
+  .phase h3 { margin-top: 0; margin-bottom: 8px; font-size: 16px; }
+  .phase-meta { font-family: var(--font-mono); font-size: 11px; color: var(--ink3); margin-bottom: 10px; }
+  .phase ul { font-size: 13px; color: var(--ink2); padding-left: 18px; }
+  .phase li { margin-bottom: 4px; }
+
+  /* ── DECISION ── */
+  .decision-box {
+    border: 2px solid var(--accent);
+    border-radius: 6px;
+    padding: 24px 28px;
+    margin: 28px 0;
+  }
+  .decision-box h3 { color: var(--accent); margin-bottom: 10px; font-size: 16px; }
+  .decision-box p { margin-bottom: 0; font-size: 14px; }
+
+  /* ── RISK TABLE ── */
+  .risk-row { display: grid; grid-template-columns: 2fr 1fr 1fr 2fr; gap: 12px; padding: 10px 0; border-bottom: 1px solid var(--border); font-size: 13px; align-items: start; }
+  .risk-row:first-child { font-weight: 700; font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--ink3); }
+  .pill { display: inline-block; padding: 2px 8px; border-radius: 20px; font-size: 11px; font-family: var(--font-mono); }
+  .pill-h { background: var(--red-bg); color: var(--red); }
+  .pill-m { background: var(--amber-bg); color: var(--amber); }
+  .pill-l { background: var(--green-bg); color: var(--green); }
+
+  @media print {
+    body { padding: 24px; font-size: 12px; }
+    h1 { font-size: 26px; }
+    .compare-grid { grid-template-columns: 1fr 1fr; }
+    .stack-grid { grid-template-columns: repeat(3, 1fr); }
+  }
+</style>
+</head>
+<body>
+
+<!-- COVER -->
+<div class="cover">
+  <div class="doc-label">Technical Specification · v1.0 · Confidential</div>
+  <h1>Centralised Digital<br>Marketing Hub</h1>
+  <p class="cover-sub">Architecture, capability mapping, toolchain recommendation, and build specification for a tech company's unified social + WhatsApp marketing platform with embedded AI intelligence.</p>
+  <div class="meta-row">
+    <div class="meta-item"><strong>Prepared</strong>June 2026</div>
+    <div class="meta-item"><strong>Channels</strong>FB · LinkedIn · TikTok · YouTube · Instagram · WhatsApp</div>
+    <div class="meta-item"><strong>EA Framework</strong>C.1.1 Digital Capability Canvas</div>
+    <div class="meta-item"><strong>Status</strong>Draft for Review</div>
+  </div>
+</div>
+
+<!-- TOC -->
+<div class="toc">
+  <h2>Contents</h2>
+  <ol>
+    <li><a href="#s1">Executive Summary &amp; Verdict</a></li>
+    <li><a href="#s2">Business Context &amp; Goals</a></li>
+    <li><a href="#s3">Capability Mapping (C.1.1 Canvas)</a></li>
+    <li><a href="#s4">Platform Decision: n8n vs LangChain/LangGraph</a></li>
+    <li><a href="#s5">Recommended Architecture</a></li>
+    <li><a href="#s6">Module Specifications</a></li>
+    <li><a href="#s7">Technology Stack</a></li>
+    <li><a href="#s8">Implementation Roadmap</a></li>
+    <li><a href="#s9">Risks &amp; Mitigations</a></li>
+    <li><a href="#s10">Appendix: API &amp; Integration Notes</a></li>
+  </ol>
+</div>
+
+<!-- 1. EXECUTIVE SUMMARY -->
+<section id="s1">
+  <h2><span class="sec-num">01</span> Executive Summary &amp; Verdict</h2>
+  <p>This specification defines the end-to-end build of a centralised digital marketing hub for a tech company, consolidating five social channels (Facebook, LinkedIn, TikTok, YouTube, Instagram) and a WhatsApp warm-lead channel into a single operational platform. The system's three pillars are <strong>process automation</strong>, <strong>cross-channel analytics</strong>, and <strong>AI-driven intelligence</strong>.</p>
+
+  <div class="verdict">
+    <div class="verdict-label">Recommended Architecture Decision</div>
+    <h3>Hybrid: n8n for workflow orchestration + LangGraph for autonomous AI agents</h3>
+    <p>Use n8n as the integration backbone — it handles scheduling, API calls, data pipelines, and deterministic workflows with zero code. Deploy LangGraph agents for tasks that require reasoning, multi-step decision-making, or adaptive behaviour: content scoring, lead classification, WhatsApp conversation management, and anomaly-triggered insight generation. The two layers communicate over HTTP/webhooks. This gives you the speed of a no-code platform where processes are predictable, and the intelligence of a custom agent framework where they are not.</p>
+  </div>
+</section>
+
+<!-- 2. BUSINESS CONTEXT -->
+<section id="s2">
+  <h2><span class="sec-num">02</span> Business Context &amp; Goals</h2>
+  <h3>Problem statement</h3>
+  <p>The marketing function currently operates each social channel in isolation. Content is created and published ad hoc, performance data lives in platform-native dashboards, no unified audience profile exists, and the WhatsApp channel (if in use) is manually managed. This creates duplicated effort, no cross-channel attribution, and no feedback loop from performance data back to content strategy.</p>
+
+  <h3>Strategic objectives</h3>
+  <div class="module">
+    <div class="module-title">P1 — Process Automation</div>
+    <ul>
+      <li>Automate content scheduling and cross-posting across all 5 social channels</li>
+      <li>Automate lead capture from social DMs, comments, and link clicks into CRM</li>
+      <li>Automate WhatsApp broadcast sequences for warm leads (product updates, nurture flows)</li>
+      <li>Automate weekly/monthly performance report generation and distribution</li>
+    </ul>
+  </div>
+  <div class="module">
+    <div class="module-title">P2 — Analytics &amp; Intelligence</div>
+    <ul>
+      <li>Unified cross-channel dashboard: reach, engagement, conversion, cost-per-lead</li>
+      <li>Audience segmentation by channel behaviour and lifecycle stage</li>
+      <li>Content performance scoring — what types, formats, and topics drive results</li>
+      <li>WhatsApp conversation analytics: response rates, drop-offs, conversion events</li>
+    </ul>
+  </div>
+  <div class="module">
+    <div class="module-title">P3 — AI-driven Decisions</div>
+    <ul>
+      <li>AI content brief generation based on trending topics + past performance data</li>
+      <li>Intelligent lead scoring and routing (cold → warm → WhatsApp nurture → sales)</li>
+      <li>Automated sentiment and intent classification on WhatsApp messages</li>
+      <li>Anomaly detection: flag underperforming campaigns in real time</li>
+    </ul>
+  </div>
+
+  <h3>Success metrics</h3>
+  <p>Reduction in manual hours per campaign week (target: &gt;60%), unified lead pipeline visibility, cost-per-acquisition tracked across all channels, WhatsApp engagement rate, AI content brief adoption rate by the creative team.</p>
+</section>
+
+<!-- 3. CAPABILITY MAPPING -->
+<section id="s3">
+  <h2><span class="sec-num">03</span> Capability Mapping (C.1.1 Canvas)</h2>
+  <p>The following capabilities from your enterprise Digital Capability Canvas are directly exercised by this hub. They are grouped by the domains they span, providing traceability from this build back to the EA framework.</p>
+
+  <h3>Domain coverage</h3>
+  <p>This hub activates capabilities across six canvas domains:</p>
+  <ul style="font-size:13px;color:var(--ink2);padding-left:20px;margin-bottom:20px;">
+    <li style="margin-bottom:6px;"><span class="domain-badge d-marcom">MarCom Orchestration (DICM-5)</span> — primary domain: campaign lifecycle, content, KPIs</li>
+    <li style="margin-bottom:6px;"><span class="domain-badge d-channel">Digital Channels (DICM-2)</span> — channel delivery, social, messaging, availability analytics</li>
+    <li style="margin-bottom:6px;"><span class="domain-badge d-intel">Digital Intelligence (DICM-7)</span> — data warehouse, prescriptive analytics, product analytics</li>
+    <li style="margin-bottom:6px;"><span class="domain-badge d-auto">Interoperability &amp; Automation (DICM-12)</span> — workflows, API integration, NLP automation, RPA bots</li>
+    <li style="margin-bottom:6px;"><span class="domain-badge d-svc">Service Orchestration (DICM-1)</span> — lead conversion, customer care, omni-channel comms, segmentation</li>
+    <li style="margin-bottom:6px;"><span class="domain-badge d-exp">Experience Orchestration (DICM-4)</span> — campaign execution, dynamic content, stakeholder outreach, behavioural analytics</li>
+  </ul>
+
+  <table class="cap-table">
+    <thead>
+      <tr>
+        <th>DICM ID</th>
+        <th>Capability</th>
+        <th>Domain</th>
+        <th>Hub Module</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr><td class="dicm">DICM-820</td><td>Manage MarCom KPI Lifecycle</td><td><span class="domain-badge d-marcom">MarCom</span></td><td>Analytics Dashboard</td></tr>
+      <tr><td class="dicm">DICM-729</td><td>Real Time Campaign Monitoring</td><td><span class="domain-badge d-marcom">MarCom</span></td><td>Analytics Dashboard</td></tr>
+      <tr><td class="dicm">DICM-1888</td><td>Manage Marketing Tags Lifecycle</td><td><span class="domain-badge d-marcom">MarCom</span></td><td>Tag &amp; Tracking Layer</td></tr>
+      <tr><td class="dicm">DICM-1854</td><td>Manage Consent / GDPR Compliance</td><td><span class="domain-badge d-marcom">MarCom</span></td><td>Compliance &amp; Consent Module</td></tr>
+      <tr><td class="dicm">DICM-783</td><td>Manage Affiliate Marketing</td><td><span class="domain-badge d-marcom">MarCom</span></td><td>Channel Publishing Engine</td></tr>
+      <tr><td class="dicm">DICM-812</td><td>Channel Availability Analytics</td><td><span class="domain-badge d-channel">Channels</span></td><td>Analytics Dashboard</td></tr>
+      <tr><td class="dicm">DICM-788</td><td>Manage Omni-Channel Communication</td><td><span class="domain-badge d-svc">Service Orch.</span></td><td>WhatsApp Hub + Social Inbox</td></tr>
+      <tr><td class="dicm">DICM-770</td><td>Manage Conversion Incentives</td><td><span class="domain-badge d-svc">Service Orch.</span></td><td>Lead Nurture Engine</td></tr>
+      <tr><td class="dicm">DICM-731</td><td>Manage Contact Creation</td><td><span class="domain-badge d-svc">Service Orch.</span></td><td>CRM Connector / Lead Capture</td></tr>
+      <tr><td class="dicm">DICM-720</td><td>Manage Lead Delivery</td><td><span class="domain-badge d-svc">Service Orch.</span></td><td>Lead Routing Agent</td></tr>
+      <tr><td class="dicm">DICM-449</td><td>Manage Segment Priority Allocation</td><td><span class="domain-badge d-svc">Service Orch.</span></td><td>AI Lead Scoring Agent</td></tr>
+      <tr><td class="dicm">DICM-696</td><td>Manage Offer Segmentation</td><td><span class="domain-badge d-svc">Service Orch.</span></td><td>WhatsApp Broadcast Segmentation</td></tr>
+      <tr><td class="dicm">DICM-450</td><td>Manage Data/Warehouse Stores</td><td><span class="domain-badge d-intel">Intelligence</span></td><td>Central Data Store (Postgres/BigQuery)</td></tr>
+      <tr><td class="dicm">DICM-1610</td><td>Manage Prescriptive Analytics</td><td><span class="domain-badge d-intel">Intelligence</span></td><td>AI Intelligence Layer</td></tr>
+      <tr><td class="dicm">DICM-1877</td><td>Manage Product Variations Analysis</td><td><span class="domain-badge d-intel">Intelligence</span></td><td>Content Performance Scoring</td></tr>
+      <tr><td class="dicm">DICM-1878</td><td>Manage Benchmark Monitoring</td><td><span class="domain-badge d-intel">Intelligence</span></td><td>Analytics Dashboard</td></tr>
+      <tr><td class="dicm">DICM-1266</td><td>Manage Process Orchestration</td><td><span class="domain-badge d-auto">Automation</span></td><td>n8n Workflow Engine</td></tr>
+      <tr><td class="dicm">DICM-1869</td><td>Manage NLP-based Automation</td><td><span class="domain-badge d-auto">Automation</span></td><td>LangGraph AI Agents</td></tr>
+      <tr><td class="dicm">DICM-758</td><td>Manage Cognitive Automation</td><td><span class="domain-badge d-auto">Automation</span></td><td>LangGraph AI Agents</td></tr>
+      <tr><td class="dicm">DICM-691</td><td>Manage Bot Automation</td><td><span class="domain-badge d-auto">Automation</span></td><td>WhatsApp Conversational Agent</td></tr>
+      <tr><td class="dicm">DICM-806</td><td>Manage Inbound Stakeholder Interactions</td><td><span class="domain-badge d-exp">Experience</span></td><td>Social Inbox / WhatsApp Hub</td></tr>
+      <tr><td class="dicm">DICM-747</td><td>Manage Dynamic Delivery Channels</td><td><span class="domain-badge d-exp">Experience</span></td><td>Channel Publishing Engine</td></tr>
+      <tr><td class="dicm">DICM-797</td><td>Manage Dynamic Content Optimisation</td><td><span class="domain-badge d-exp">Experience</span></td><td>AI Content Brief Generator</td></tr>
+      <tr><td class="dicm">DICM-679</td><td>Manage Campaign Channel Mix</td><td><span class="domain-badge d-exp">Experience</span></td><td>Analytics Dashboard</td></tr>
+      <tr><td class="dicm">DICM-945</td><td>Manage Onsite Behavioural Analytics</td><td><span class="domain-badge d-exp">Experience</span></td><td>Analytics Dashboard</td></tr>
+      <tr><td class="dicm">DICM-9c5</td><td>Manage Customer Feedback &amp; Surveys</td><td><span class="domain-badge d-exp">Experience</span></td><td>WhatsApp Survey Flows</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<!-- 4. PLATFORM DECISION -->
+<section id="s4">
+  <h2><span class="sec-num">04</span> Platform Decision: n8n vs LangChain/LangGraph</h2>
+  <p>This is the most critical architectural decision. The answer depends on clearly separating <em>deterministic workflows</em> (where the steps are known in advance) from <em>agentic tasks</em> (where the system must reason and decide). These are different problems that need different tools.</p>
+
+  <div class="compare-grid">
+    <div class="compare-card winner">
+      <div class="compare-header">
+        <h3>n8n</h3>
+        <span class="tag">✓ Recommended for automation</span>
+      </div>
+      <div class="compare-body">
+        <div class="trait"><span class="trait-label">Learning curve</span><span class="trait-val good">Low — visual</span></div>
+        <div class="trait"><span class="trait-label">Setup speed</span><span class="trait-val good">Days, not weeks</span></div>
+        <div class="trait"><span class="trait-label">API integrations</span><span class="trait-val good">500+ built-in nodes</span></div>
+        <div class="trait"><span class="trait-label">Self-hostable</span><span class="trait-val good">Yes (Docker)</span></div>
+        <div class="trait"><span class="trait-label">Cost</span><span class="trait-val good">Free OSS / low cloud</span></div>
+        <div class="trait"><span class="trait-label">AI reasoning</span><span class="trait-val bad">Limited (LLM node only)</span></div>
+        <div class="trait"><span class="trait-label">Complex agent logic</span><span class="trait-val bad">Not designed for it</span></div>
+        <div class="trait"><span class="trait-label">Best for</span><span class="trait-val">Scheduling, ETL, API chains, triggers, notifications, reporting pipelines</span></div>
+      </div>
+    </div>
+    <div class="compare-card">
+      <div class="compare-header">
+        <h3>LangChain + LangGraph</h3>
+        <span class="tag">✓ Recommended for agents</span>
+      </div>
+      <div class="compare-body">
+        <div class="trait"><span class="trait-label">Learning curve</span><span class="trait-val bad">High — Python required</span></div>
+        <div class="trait"><span class="trait-label">Setup speed</span><span class="trait-val mid">Weeks</span></div>
+        <div class="trait"><span class="trait-label">API integrations</span><span class="trait-val mid">Manual (tool definitions)</span></div>
+        <div class="trait"><span class="trait-label">Self-hostable</span><span class="trait-val good">Yes</span></div>
+        <div class="trait"><span class="trait-label">Cost</span><span class="trait-val mid">Dev time + LLM API costs</span></div>
+        <div class="trait"><span class="trait-label">AI reasoning</span><span class="trait-val good">Native, graph-based</span></div>
+        <div class="trait"><span class="trait-label">Complex agent logic</span><span class="trait-val good">Purpose-built for it</span></div>
+        <div class="trait"><span class="trait-label">Best for</span><span class="trait-val">Lead scoring, WhatsApp conversations, content analysis, multi-step reasoning</span></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="decision-box">
+    <h3>Decision rationale: Use both, with clear boundaries</h3>
+    <p>Neither tool alone is sufficient. n8n alone cannot support the intelligent decision-making required for lead classification or conversational WhatsApp flows. LangGraph alone cannot manage the 50+ deterministic integration tasks (scheduling posts, pulling API metrics, sending reports) without excessive custom code. The hybrid approach means: <strong>n8n owns the plumbing</strong> (triggers, data movement, notifications), and <strong>LangGraph agents are callable services</strong> that n8n invokes via HTTP when intelligence is needed. This is the industry-standard pattern for production AI automation.</p>
+  </div>
+
+  <h3>Decision tree: which tool for which task</h3>
+  <table class="cap-table">
+    <thead>
+      <tr><th>Task</th><th>Steps known in advance?</th><th>Needs reasoning?</th><th>Use</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>Schedule and publish posts across 5 channels</td><td>Yes</td><td>No</td><td><strong>n8n</strong></td></tr>
+      <tr><td>Pull metrics from Meta/TikTok/YouTube APIs nightly</td><td>Yes</td><td>No</td><td><strong>n8n</strong></td></tr>
+      <tr><td>Send weekly performance report via email</td><td>Yes</td><td>No</td><td><strong>n8n</strong></td></tr>
+      <tr><td>Trigger WhatsApp broadcast when lead enters stage</td><td>Yes</td><td>No</td><td><strong>n8n</strong></td></tr>
+      <tr><td>Classify lead as cold/warm/hot from social signal</td><td>No</td><td>Yes</td><td><strong>LangGraph</strong></td></tr>
+      <tr><td>Generate content brief from trending data</td><td>No</td><td>Yes</td><td><strong>LangGraph</strong></td></tr>
+      <tr><td>Respond to WhatsApp queries intelligently</td><td>No</td><td>Yes</td><td><strong>LangGraph</strong></td></tr>
+      <tr><td>Score and prioritise content performance</td><td>No</td><td>Yes</td><td><strong>LangGraph</strong></td></tr>
+      <tr><td>Detect campaign anomalies and generate insight</td><td>Partially</td><td>Yes</td><td><strong>n8n trigger → LangGraph agent</strong></td></tr>
+    </tbody>
+  </table>
+</section>
+
+<!-- 5. ARCHITECTURE -->
+<section id="s5">
+  <h2><span class="sec-num">05</span> Recommended System Architecture</h2>
+  <p>The hub is structured as five logical layers, each with a clear responsibility. Data flows upward from channels to intelligence, and decisions flow back downward to channel actions.</p>
+
+  <h3>Layer 1 — Channel Ingestion</h3>
+  <p>Webhook listeners and scheduled API pollers that collect raw data (posts, engagement metrics, DMs, comments, new followers) from each platform. Built in n8n. Each channel has its own ingestion workflow to isolate failures.</p>
+  <div class="module">
+    <div class="module-title">Channels</div>
+    <ul>
+      <li><strong>Facebook/Instagram</strong> — Meta Graph API (posts, insights, messenger webhooks)</li>
+      <li><strong>LinkedIn</strong> — LinkedIn Marketing API (organic + paid, follower analytics)</li>
+      <li><strong>TikTok</strong> — TikTok for Business API (video metrics, profile data)</li>
+      <li><strong>YouTube</strong> — YouTube Data API v3 (video performance, comments, subscribers)</li>
+      <li><strong>WhatsApp</strong> — WhatsApp Business API via Meta (Cloud API or BSP like 360Dialog / Twilio)</li>
+    </ul>
+    <div class="stack">n8n nodes: HTTP Request, Webhook, Schedule Trigger, Meta node, YouTube node</div>
+  </div>
+
+  <h3>Layer 2 — Central Data Store</h3>
+  <p>All ingested data is normalised and stored in a single schema. This is the single source of truth for analytics, agent context, and reporting. The unified schema maps to DICM-450 (Data/Warehouse Stores).</p>
+  <div class="module">
+    <div class="module-title">Data store schema (key tables)</div>
+    <ul>
+      <li><code>channels</code> — platform, account, connected status</li>
+      <li><code>posts</code> — content, channel, publish time, format, topic tags</li>
+      <li><code>post_metrics</code> — impressions, reach, engagements, clicks, video views (daily)</li>
+      <li><code>leads</code> — source channel, contact info, stage, score, assigned_to</li>
+      <li><code>whatsapp_conversations</code> — thread_id, messages, timestamps, classification, outcome</li>
+      <li><code>campaigns</code> — name, objective, budget, start/end, channels, KPIs</li>
+      <li><code>content_briefs</code> — AI-generated brief, topic, format, target channel, status</li>
+    </ul>
+    <div class="stack">PostgreSQL (self-hosted) or BigQuery (cloud). Redis for caching hot metrics.</div>
+  </div>
+
+  <h3>Layer 3 — Automation Engine (n8n)</h3>
+  <p>n8n is the operational backbone. It runs on a schedule or reacts to webhooks and executes deterministic pipelines. It also calls out to LangGraph agents when AI processing is needed.</p>
+
+  <h3>Layer 4 — Intelligence Layer (LangGraph)</h3>
+  <p>A Python FastAPI service hosting LangGraph agent graphs. Each agent is a stateful graph with nodes for LLM calls, tool use, memory retrieval, and conditional routing. Agents are invoked by n8n via POST requests and return structured JSON.</p>
+
+  <h3>Layer 5 — Dashboard &amp; Control Plane</h3>
+  <p>A web frontend (Next.js or Metabase) that provides the unified analytics view, content calendar, lead pipeline, and WhatsApp broadcast management. Non-technical users operate the hub from this layer.</p>
+</section>
+
+<!-- 6. MODULE SPECS -->
+<section id="s6">
+  <h2><span class="sec-num">06</span> Module Specifications</h2>
+
+  <h3>Module A: Channel Publishing Engine</h3>
+  <div class="module">
+    <div class="module-title">Purpose</div>
+    <ul>
+      <li>Content calendar: schedule posts for one or all channels from a single interface</li>
+      <li>Cross-post with channel-specific formatting (caption length, hashtags, aspect ratios)</li>
+      <li>Queue management: drafts, scheduled, published, failed states</li>
+      <li>Support for post types: image, video, carousel, link, story (where API allows)</li>
+    </ul>
+    <div class="stack">n8n Schedule Trigger → format transformation → Meta/LinkedIn/TikTok/YouTube API nodes</div>
+  </div>
+
+  <h3>Module B: Analytics Dashboard</h3>
+  <div class="module">
+    <div class="module-title">Purpose</div>
+    <ul>
+      <li>Cross-channel KPI summary: total reach, total engagements, total leads, CPL</li>
+      <li>Channel-by-channel breakdown with benchmarks (DICM-1878)</li>
+      <li>Content performance: top/bottom performing posts by format, topic, channel</li>
+      <li>Audience growth over time, follower quality indicators</li>
+      <li>Campaign attribution: which channel drove which lead conversion</li>
+      <li>Automated weekly PDF report emailed to stakeholders (n8n + PDF generation)</li>
+    </ul>
+    <div class="stack">n8n nightly ETL → PostgreSQL → Metabase (self-hosted) OR Next.js + Chart.js/Recharts</div>
+  </div>
+
+  <h3>Module C: AI Content Brief Generator (LangGraph Agent)</h3>
+  <div class="module">
+    <div class="module-title">Agent graph</div>
+    <ul>
+      <li><strong>Node 1 — Context retrieval:</strong> fetch top 10 performing posts (last 30 days) from DB + current trending topics via web search tool</li>
+      <li><strong>Node 2 — Pattern analysis:</strong> LLM identifies winning content patterns (format, hook style, topic clusters)</li>
+      <li><strong>Node 3 — Brief generation:</strong> outputs structured brief (topic, hook, format, channel, CTA, estimated performance band)</li>
+      <li><strong>Node 4 — Storage:</strong> writes brief to <code>content_briefs</code> table, notifies creative team via Slack/email</li>
+    </ul>
+    <div class="stack">LangGraph + Claude/GPT-4o + PostgreSQL tool + Brave Search tool · Triggered by n8n on Monday mornings or on-demand from dashboard</div>
+  </div>
+
+  <h3>Module D: Lead Capture &amp; Scoring Engine</h3>
+  <div class="module">
+    <div class="module-title">Purpose</div>
+    <ul>
+      <li>Capture leads from: social link clicks (UTM-tracked), DM responses, comment interactions, WhatsApp opt-ins</li>
+      <li>Enrich contact: name, channel source, content interaction history, engagement frequency</li>
+      <li>LangGraph scoring agent: classifies each lead as cold/warm/hot based on behaviour signals</li>
+      <li>Routing: warm/hot leads → WhatsApp nurture; cold leads → retargeting audience</li>
+      <li>CRM sync: push qualified leads to HubSpot/Pipedrive/Salesforce via API (DICM-731)</li>
+    </ul>
+    <div class="stack">n8n webhook → LangGraph scoring agent → CRM node → WhatsApp trigger workflow</div>
+  </div>
+
+  <h3>Module E: WhatsApp Hub (Warm Lead Nurture)</h3>
+  <div class="module">
+    <div class="module-title">Purpose</div>
+    <ul>
+      <li>Opt-in management: double opt-in flow compliant with WhatsApp Business Policy and GDPR (DICM-1854)</li>
+      <li>Broadcast sequences: templated message sequences triggered by lead stage (new, engaged, product-interest, dormant re-engagement)</li>
+      <li>Message personalisation: first name, product interest, last interaction reference</li>
+      <li>Conversational agent: LangGraph agent handles inbound replies — classifies intent, routes to human agent if needed, or auto-responds with relevant product info</li>
+      <li>Analytics: open rate (read receipts), reply rate, conversion events (link click, booking, purchase)</li>
+    </ul>
+    <div class="stack">WhatsApp Cloud API (Meta) or 360Dialog BSP → n8n for broadcast scheduling → LangGraph conversational agent for inbound</div>
+  </div>
+
+  <h3>Module F: Anomaly Detection &amp; Alerts</h3>
+  <div class="module">
+    <div class="module-title">Purpose</div>
+    <ul>
+      <li>n8n monitors daily metrics against rolling 14-day baseline</li>
+      <li>Flags: sudden reach drop (&gt;30%), engagement rate collapse, unusually high negative comments, follower spike (bought followers indicator)</li>
+      <li>Anomaly passed to LangGraph agent which generates a plain-English diagnostic and recommended action</li>
+      <li>Alert delivered to Slack channel + dashboard notification</li>
+    </ul>
+    <div class="stack">n8n Schedule Trigger → threshold evaluation → conditional: if anomaly → LangGraph diagnostic agent → Slack node</div>
+  </div>
+</section>
+
+<!-- 7. TECH STACK -->
+<section id="s7">
+  <h2><span class="sec-num">07</span> Technology Stack</h2>
+
+  <div class="stack-grid">
+    <div class="stack-card">
+      <h4>Orchestration</h4>
+      <div class="tools"><strong>n8n</strong> (self-hosted Docker)<br>Workflow automation, scheduling, API nodes, webhook handling</div>
+    </div>
+    <div class="stack-card">
+      <h4>AI Agents</h4>
+      <div class="tools"><strong>LangGraph</strong> + LangChain<br>Agent graphs, tool calling, memory, structured outputs</div>
+    </div>
+    <div class="stack-card">
+      <h4>LLM</h4>
+      <div class="tools"><strong>Claude 3.5 Sonnet</strong> (primary)<br>GPT-4o (fallback)<br>Anthropic API / OpenAI API</div>
+    </div>
+    <div class="stack-card">
+      <h4>Data Store</h4>
+      <div class="tools"><strong>PostgreSQL</strong> (primary)<br>Redis (caching)<br>Optional: BigQuery for scale</div>
+    </div>
+    <div class="stack-card">
+      <h4>WhatsApp</h4>
+      <div class="tools"><strong>WhatsApp Cloud API</strong> (Meta)<br>or 360Dialog BSP<br>Template manager, opt-in flows</div>
+    </div>
+    <div class="stack-card">
+      <h4>Analytics UI</h4>
+      <div class="tools"><strong>Metabase</strong> (self-hosted, free)<br>or Next.js + Recharts for custom dashboard</div>
+    </div>
+    <div class="stack-card">
+      <h4>Social APIs</h4>
+      <div class="tools">Meta Graph API (FB + IG)<br>LinkedIn Marketing API<br>TikTok for Business API<br>YouTube Data API v3</div>
+    </div>
+    <div class="stack-card">
+      <h4>Agent Runtime</h4>
+      <div class="tools"><strong>FastAPI</strong> (Python)<br>Docker container<br>Exposed as internal HTTP service</div>
+    </div>
+    <div class="stack-card">
+      <h4>Infra</h4>
+      <div class="tools"><strong>Docker Compose</strong> (local dev)<br>Railway / Render / AWS ECS<br>Nginx reverse proxy</div>
+    </div>
+    <div class="stack-card">
+      <h4>CRM Integration</h4>
+      <div class="tools">HubSpot / Pipedrive / Salesforce<br>via REST API<br>n8n native nodes</div>
+    </div>
+    <div class="stack-card">
+      <h4>Notifications</h4>
+      <div class="tools">Slack (alerts + reports)<br>Email via SendGrid / Resend<br>n8n nodes</div>
+    </div>
+    <div class="stack-card">
+      <h4>Auth &amp; Security</h4>
+      <div class="tools">OAuth 2.0 per platform<br>Secrets in environment vars<br>n8n credential vault</div>
+    </div>
+  </div>
+</section>
+
+<!-- 8. ROADMAP -->
+<section id="s8">
+  <h2><span class="sec-num">08</span> Implementation Roadmap</h2>
+  <p>A four-phase delivery over approximately 16 weeks, sequenced to deliver value early and add intelligence incrementally.</p>
+
+  <div class="phases">
+    <div class="phase" data-n="1">
+      <h3>Foundation — Ingestion &amp; Data Store</h3>
+      <div class="phase-meta">Weeks 1–3 · Backend developer + n8n administrator</div>
+      <ul>
+        <li>Provision infrastructure (Docker, Postgres, n8n, Redis)</li>
+        <li>Register developer apps on Meta, LinkedIn, TikTok, YouTube; complete OAuth flows</li>
+        <li>Build n8n ingestion workflows per channel (nightly metric pulls)</li>
+        <li>Design and migrate database schema (posts, metrics, leads, conversations)</li>
+        <li>Basic n8n dashboard: workflow health, last run status</li>
+        <li>WhatsApp Business API account setup and message template approval</li>
+      </ul>
+    </div>
+
+    <div class="phase" data-n="2">
+      <h3>Automation — Publishing &amp; Lead Capture</h3>
+      <div class="phase-meta">Weeks 4–7 · n8n admin + frontend developer</div>
+      <ul>
+        <li>Content calendar UI: create/schedule posts, assign to channels</li>
+        <li>n8n publishing workflows per channel with formatting transformations</li>
+        <li>UTM parameter injection on all outbound links</li>
+        <li>Lead capture webhooks from social link clicks and form fills</li>
+        <li>WhatsApp opt-in flow: broadcast list building with double opt-in</li>
+        <li>First WhatsApp broadcast sequence (welcome + product intro, 3-message drip)</li>
+        <li>CRM sync for captured leads</li>
+      </ul>
+    </div>
+
+    <div class="phase" data-n="3">
+      <h3>Analytics — Unified Dashboard &amp; Reporting</h3>
+      <div class="phase-meta">Weeks 8–11 · Analytics developer + frontend</div>
+      <ul>
+        <li>Metabase or custom dashboard: cross-channel KPI overview</li>
+        <li>Channel breakdown views, content performance table</li>
+        <li>Audience growth charts, follower quality tracking</li>
+        <li>Campaign attribution model (last-touch, first-touch)</li>
+        <li>Automated weekly PDF report workflow in n8n</li>
+        <li>WhatsApp analytics: open rate, reply rate, conversion tracking</li>
+        <li>Anomaly detection workflows with Slack alerts</li>
+      </ul>
+    </div>
+
+    <div class="phase" data-n="4">
+      <h3>Intelligence — AI Agents</h3>
+      <div class="phase-meta">Weeks 12–16 · Python/AI developer</div>
+      <ul>
+        <li>Deploy FastAPI agent service (Docker)</li>
+        <li>Build and test LangGraph lead scoring agent</li>
+        <li>Build and test content brief generator agent (with web search tool)</li>
+        <li>Build WhatsApp conversational agent (intent classification + FAQ response + human handoff)</li>
+        <li>Build anomaly diagnostic agent (called from n8n on threshold breach)</li>
+        <li>Wire all agents into n8n workflows via HTTP Request nodes</li>
+        <li>Agent evaluation: measure scoring accuracy, brief adoption rate</li>
+        <li>Stakeholder training and documentation handover</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- 9. RISKS -->
+<section id="s9">
+  <h2><span class="sec-num">09</span> Risks &amp; Mitigations</h2>
+
+  <div class="risk-row">
+    <span>Risk</span><span>Likelihood</span><span>Impact</span><span>Mitigation</span>
+  </div>
+  <div class="risk-row">
+    <span>Meta API rate limits throttle ingestion during campaigns</span>
+    <span><span class="pill pill-m">Medium</span></span>
+    <span><span class="pill pill-m">Medium</span></span>
+    <span>Implement exponential backoff in n8n, cache last-known values, stagger polling windows per channel</span>
+  </div>
+  <div class="risk-row">
+    <span>WhatsApp template rejections delay broadcast launch</span>
+    <span><span class="pill pill-h">High</span></span>
+    <span><span class="pill pill-m">Medium</span></span>
+    <span>Submit templates 10+ business days before launch; prepare multiple variants; use pre-approved utility templates initially</span>
+  </div>
+  <div class="risk-row">
+    <span>LLM hallucination in content briefs sent to creative team</span>
+    <span><span class="pill pill-m">Medium</span></span>
+    <span><span class="pill pill-l">Low</span></span>
+    <span>Frame briefs as suggestions not directives; add human approval step before brief is marked active; log all AI outputs</span>
+  </div>
+  <div class="risk-row">
+    <span>GDPR/data compliance for WhatsApp contact storage</span>
+    <span><span class="pill pill-m">Medium</span></span>
+    <span><span class="pill pill-h">High</span></span>
+    <span>Double opt-in, explicit consent records, easy unsubscribe in every message, data stored in compliant region (DICM-1854)</span>
+  </div>
+  <div class="risk-row">
+    <span>LinkedIn API access restricted to approved partners</span>
+    <span><span class="pill pill-l">Low</span></span>
+    <span><span class="pill pill-m">Medium</span></span>
+    <span>Apply for Marketing Developer Platform access early; use native analytics export as interim fallback</span>
+  </div>
+  <div class="risk-row">
+    <span>LangGraph agent latency makes WhatsApp responses slow</span>
+    <span><span class="pill pill-m">Medium</span></span>
+    <span><span class="pill pill-m">Medium</span></span>
+    <span>Send immediate acknowledgement message ("We're looking into that…") while agent processes; target sub-5s agent response time; cache common FAQ responses</span>
+  </div>
+  <div class="risk-row">
+    <span>n8n workflow sprawl becomes unmanageable over time</span>
+    <span><span class="pill pill-m">Medium</span></span>
+    <span><span class="pill pill-l">Low</span></span>
+    <span>Enforce naming conventions, folder structure, and tagging from day one; document each workflow's purpose in its description field; quarterly audit</span>
+  </div>
+</section>
+
+<!-- 10. APPENDIX -->
+<section id="s10">
+  <h2><span class="sec-num">10</span> Appendix: API &amp; Integration Notes</h2>
+
+  <h3>Meta (Facebook + Instagram)</h3>
+  <p>Use the <strong>Meta Graph API v19+</strong>. Publishing requires a Facebook Page (not personal profile). Instagram publishing requires a Professional account linked to a Facebook Page. Metrics available: impressions, reach, engagement, clicks, saves, profile visits. Webhooks available for new comments and messages. Rate limit: 200 calls/hour per user token.</p>
+
+  <h3>LinkedIn</h3>
+  <p>Requires the <strong>Marketing Developer Platform</strong> partnership for full advertising and analytics access. For organic content only, the basic API allows post creation and basic engagement metrics. Apply at <code>linkedin.com/partners</code>. Follower analytics and detailed post insights require <code>r_organization_social</code> scope.</p>
+
+  <h3>TikTok</h3>
+  <p>The <strong>TikTok for Business API</strong> covers both organic (Content Posting API) and paid (Ads API). Video upload requires a two-step flow: initiate upload → upload chunks → publish. Organic insights (views, likes, shares, comments, watch time) available via the Research API. Apply via <code>ads.tiktok.com/marketing_api</code>.</p>
+
+  <h3>YouTube</h3>
+  <p><strong>YouTube Data API v3</strong> is freely available via Google Cloud Console. Quota: 10,000 units/day (sufficient for nightly pulls). Video statistics, channel stats, comments, and captions all accessible. Live broadcast management available if needed.</p>
+
+  <h3>WhatsApp Business API</h3>
+  <p>Two options: <strong>WhatsApp Cloud API</strong> (direct Meta, free per-message pricing) or a <strong>Business Solution Provider</strong> like 360Dialog, Twilio, or Bird. Cloud API is recommended for cost control. All broadcast messages must use pre-approved templates. Conversational (session) messages are free within a 24-hour window. Minimum phone number requirement: a verified business phone number (can be a VoIP number).</p>
+
+  <h3>n8n ↔ LangGraph communication</h3>
+  <p>LangGraph agents are deployed as a FastAPI service. Each agent is exposed as a POST endpoint (e.g., <code>POST /agents/score-lead</code>, <code>POST /agents/generate-brief</code>). n8n calls these via the HTTP Request node, passing structured JSON payloads and receiving structured JSON responses. Authenticate with a shared API key stored in n8n credentials vault.</p>
+
+  <h3>Environment variables (required)</h3>
+  <pre style="background:var(--ink);color:#c8f5c0;padding:16px;border-radius:4px;font-size:12px;overflow-x:auto;line-height:1.8;">
+META_ACCESS_TOKEN=
+META_PAGE_ID=
+INSTAGRAM_ACCOUNT_ID=
+LINKEDIN_ACCESS_TOKEN=
+LINKEDIN_ORG_ID=
+TIKTOK_ACCESS_TOKEN=
+YOUTUBE_API_KEY=
+WHATSAPP_PHONE_NUMBER_ID=
+WHATSAPP_ACCESS_TOKEN=
+ANTHROPIC_API_KEY=
+OPENAI_API_KEY=
+DATABASE_URL=postgresql://...
+REDIS_URL=redis://...
+AGENT_SERVICE_URL=http://agents:8000
+AGENT_API_KEY=
+CRM_API_KEY=
+SLACK_WEBHOOK_URL=
+  </pre>
+</section>
+
+<div style="border-top:1.5px solid var(--border);margin-top:48px;padding-top:20px;font-size:12px;color:var(--ink3);display:flex;justify-content:space-between;">
+  <span>Digital Marketing Hub Specification · v1.0</span>
+  <span>Prepared June 2026 · Based on C.1.1 Digital Capability Canvas</span>
+</div>
+
+</body>
+</html>

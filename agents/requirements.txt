@@ -1,0 +1,60 @@
+# Core Framework
+# FastAPI 0.115+ includes critical typing and async improvements for Python 3.13/3.14
+fastapi>=0.115.0
+uvicorn[standard]>=0.30.0
+pydantic>=2.10.0
+pydantic-settings>=2.6.0
+
+# LangGraph & LangChain
+# LangChain 0.3.x is the current stable branch with full Python 3.14 support
+langchain>=0.3.0
+langgraph>=0.2.50
+langchain-anthropic>=0.3.0
+langchain-openai>=0.3.0
+langchain-postgres>=0.0.12
+
+# Database
+# NOTE: psycopg2-binary may lack pre-built wheels for Python 3.14. 
+# It is highly recommended to migrate to psycopg (v3) for modern async Python.
+# If you must use v2, keep psycopg2-binary>=2.9.10. Otherwise, use:
+psycopg[binary]>=3.2.0
+sqlalchemy>=2.0.36
+redis>=5.2.0
+alembic>=1.14.0
+
+# HTTP & Async
+httpx>=0.28.0
+aiohttp>=3.11.0
+python-dotenv>=1.0.1
+
+# LLM & AI
+anthropic>=0.40.0
+openai>=1.59.0
+
+# Utilities
+# Note: python-logging-loki is largely unmaintained. Consider migrating to 
+# 'python-json-logger' + a dedicated Loki shipper (e.g., promtail/vector) in the future.
+# Replace python-logging-loki with:
+python-json-logger>=3.2.0
+python-dateutil>=2.9.0
+
+# Testing (optional, for local development)
+# Fixed package name: 'httpx-pytest' does not exist; the correct package is 'pytest-httpx'
+pytest>=8.3.0
+pytest-asyncio>=0.24.0
+pytest-httpx>=0.33.0
+
+# Security
+python-jose[cryptography]>=3.4.0
+# WARNING: passlib is unmaintained and has known compatibility issues with bcrypt>=4.2.0.
+# It is highly recommended to drop passlib and use 'bcrypt' directly for new projects.
+# If legacy code requires it, pin bcrypt to <4.2.0 or use passlib with caution.
+passlib[bcrypt]>=1.7.4
+bcrypt>=4.2.0
+cryptography>=44.0.0
+
+# Monitoring & Observability
+# OpenTelemetry 1.29+ includes necessary fixes for Python 3.13/3.14 C-API changes
+opentelemetry-api>=1.29.0
+opentelemetry-sdk>=1.29.0
+opentelemetry-exporter-otlp>=1.29.0

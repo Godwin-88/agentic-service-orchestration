@@ -1,0 +1,178 @@
+@import "tailwindcss" source(none);
+@source "../src";
+@import "tw-animate-css";
+
+@custom-variant dark (&:is(.dark *));
+
+/*
+ * Agentic CRM — dark, technical, slightly synthetic.
+ * Palette anchors on the spec: deep midnight, indigo accent, teal accent.
+ */
+
+@theme inline {
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  --radius-2xl: calc(var(--radius) + 8px);
+
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-teal: var(--teal);
+  --color-teal-foreground: var(--teal-foreground);
+  --color-coral: var(--coral);
+  --color-amber: var(--amber);
+
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+
+  --font-display: "Space Grotesk", system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", "Fira Code", monospace;
+}
+
+:root {
+  --radius: 0.625rem;
+
+  /* Base — deep midnight */
+  --background: oklch(0.18 0.025 270);
+  --foreground: oklch(0.94 0.012 250);
+
+  --surface: oklch(0.22 0.028 270);
+  --surface-2: oklch(0.26 0.035 272);
+
+  --card: oklch(0.22 0.028 270);
+  --card-foreground: oklch(0.94 0.012 250);
+  --popover: oklch(0.24 0.03 270);
+  --popover-foreground: oklch(0.94 0.012 250);
+
+  /* Indigo accent */
+  --primary: oklch(0.65 0.21 280);
+  --primary-foreground: oklch(0.98 0.01 270);
+
+  --secondary: oklch(0.28 0.04 272);
+  --secondary-foreground: oklch(0.94 0.012 250);
+
+  --muted: oklch(0.28 0.03 270);
+  --muted-foreground: oklch(0.70 0.02 260);
+
+  --accent: oklch(0.30 0.05 275);
+  --accent-foreground: oklch(0.95 0.01 270);
+
+  /* Teal */
+  --teal: oklch(0.78 0.16 180);
+  --teal-foreground: oklch(0.18 0.025 270);
+
+  --coral: oklch(0.72 0.19 25);
+  --amber: oklch(0.80 0.17 80);
+
+  --destructive: oklch(0.65 0.22 25);
+  --destructive-foreground: oklch(0.98 0.01 0);
+
+  --border: oklch(0.32 0.03 270);
+  --input: oklch(0.30 0.03 270);
+  --ring: oklch(0.65 0.21 280);
+
+  --chart-1: oklch(0.65 0.21 280);
+  --chart-2: oklch(0.78 0.16 180);
+  --chart-3: oklch(0.72 0.19 25);
+  --chart-4: oklch(0.80 0.17 80);
+  --chart-5: oklch(0.60 0.18 320);
+
+  --sidebar: oklch(0.20 0.025 270);
+  --sidebar-foreground: oklch(0.88 0.012 250);
+  --sidebar-primary: oklch(0.65 0.21 280);
+  --sidebar-primary-foreground: oklch(0.98 0.01 270);
+  --sidebar-accent: oklch(0.26 0.035 272);
+  --sidebar-accent-foreground: oklch(0.94 0.012 250);
+  --sidebar-border: oklch(0.30 0.03 270);
+  --sidebar-ring: oklch(0.65 0.21 280);
+}
+
+.dark {
+  /* App is dark by default; keep parity */
+  --background: oklch(0.18 0.025 270);
+  --foreground: oklch(0.94 0.012 250);
+}
+
+@layer base {
+  * {
+    border-color: var(--color-border);
+  }
+  html, body, #root {
+    height: 100%;
+  }
+  body {
+    background:
+      radial-gradient(1100px 600px at 100% -10%, color-mix(in oklab, var(--primary) 18%, transparent), transparent 60%),
+      radial-gradient(900px 500px at -10% 110%, color-mix(in oklab, var(--teal) 14%, transparent), transparent 60%),
+      var(--color-background);
+    color: var(--color-foreground);
+    font-family: var(--font-display);
+    -webkit-font-smoothing: antialiased;
+    font-feature-settings: "ss01", "cv11";
+  }
+  .font-mono { font-family: var(--font-mono); }
+
+  ::-webkit-scrollbar { width: 10px; height: 10px; }
+  ::-webkit-scrollbar-thumb { background: var(--color-border); border-radius: 8px; }
+  ::-webkit-scrollbar-thumb:hover { background: color-mix(in oklab, var(--primary) 50%, var(--color-border)); }
+}
+
+@utility surface-card {
+  background: color-mix(in oklab, var(--surface) 92%, transparent);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  backdrop-filter: blur(6px);
+}
+
+@utility glow-ring {
+  box-shadow: 0 0 0 1px color-mix(in oklab, var(--primary) 40%, transparent),
+              0 10px 40px -10px color-mix(in oklab, var(--primary) 35%, transparent);
+}
+
+@utility label-eyebrow {
+  font-size: 0.68rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: color-mix(in oklab, var(--primary) 75%, white);
+  font-weight: 600;
+}
+
+@utility grid-bg {
+  background-image:
+    linear-gradient(to right, color-mix(in oklab, var(--color-border) 60%, transparent) 1px, transparent 1px),
+    linear-gradient(to bottom, color-mix(in oklab, var(--color-border) 60%, transparent) 1px, transparent 1px);
+  background-size: 32px 32px;
+}

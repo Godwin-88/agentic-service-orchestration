@@ -1,0 +1,148 @@
+{
+  "name": "whatsapp-opt-in-flow",
+  "nodes": [
+    {
+      "parameters": {
+        "path": "webhook/whatsapp-opt-in",
+        "method": "POST",
+        "authentication": "none"
+      },
+      "name": "Webhook - WhatsApp Opt-in",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        250,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "WITH upsert_lead AS (\n  INSERT INTO leads (email, phone, first_name, source_channel, lead_stage) \n  VALUES ('{{ $json.body.email }}', '{{ $json.body.phone }}', '{{ $json.body.first_name }}', 'whatsapp', 'engaged')\n  ON CONFLICT (email) DO UPDATE SET phone = EXCLUDED.phone, updated_at = NOW()\n  RETURNING id\n)\nINSERT INTO whatsapp_optins (lead_id, phone_number, opt_in_date, opt_in_method, consent_recorded, consent_timestamp)\nSELECT id, '{{ $json.body.phone }}', NOW(), 'double_opt_in_form', TRUE, NOW() FROM upsert_lead\nON CONFLICT (lead_id, phone_number) DO UPDATE SET opt_in_date = NOW(), consent_recorded = TRUE\nRETURNING lead_id;"
+      },
+      "name": "DB - Lead & Opt-in Upsert",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 1,
+      "position": [
+        450,
+        300
+      ],
+      "credentials": {
+        "postgres": "PostgreSQL - Marketing Hub"
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://graph.facebook.com/v19.0/{{ $json.body.account_id }}/messages",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $json.body.access_token }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"messaging_product\": \"whatsapp\",\n  \"to\": \"{{ $json.body.phone }}\",\n  \"type\": \"template\",\n  \"template\": {\n    \"name\": \"welcome_message\",\n    \"language\": {\n      \"code\": \"en_US\"\n    }\n  }\n}",
+        "options": {}
+      },
+      "name": "API - Send Welcome Template",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 3,
+      "position": [
+        650,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "insert",
+        "schema": "public",
+        "table": "action_log",
+        "columns": "action_type,resource_type,resource_id,actor,actor_type,status,details",
+        "fieldsUi": {
+          "values": [
+            {
+              "fieldName": "action_type",
+              "fieldValue": "whatsapp_optin"
+            },
+            {
+              "fieldName": "resource_type",
+              "fieldValue": "lead"
+            },
+            {
+              "fieldName": "resource_id",
+              "fieldValue": "={{ $node['DB - Lead & Opt-in Upsert'].json.lead_id }}"
+            },
+            {
+              "fieldName": "actor",
+              "fieldValue": "webhook"
+            },
+            {
+              "fieldName": "actor_type",
+              "fieldValue": "system"
+            },
+            {
+              "fieldName": "status",
+              "fieldValue": "success"
+            },
+            {
+              "fieldName": "details",
+              "fieldValue": "={{ JSON.stringify({ phone: $node['Webhook - WhatsApp Opt-in'].json.body.phone }) }}"
+            }
+          ]
+        }
+      },
+      "name": "DB - Log Action",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 1,
+      "position": [
+        850,
+        300
+      ],
+      "credentials": {
+        "postgres": "PostgreSQL - Marketing Hub"
+      }
+    }
+  ],
+  "connections": {
+    "Webhook - WhatsApp Opt-in": {
+      "main": [
+        [
+          {
+            "node": "DB - Lead & Opt-in Upsert",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "DB - Lead & Opt-in Upsert": {
+      "main": [
+        [
+          {
+            "node": "API - Send Welcome Template",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "API - Send Welcome Template": {
+      "main": [
+        [
+          {
+            "node": "DB - Log Action",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {}
+}

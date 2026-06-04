@@ -1,0 +1,151 @@
+{
+  "name": "publish-to-tiktok",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "hours",
+              "interval": 1
+            }
+          ]
+        }
+      },
+      "name": "Trigger - Hourly",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1,
+      "position": [250, 300]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT p.id, p.content_text, p.media_urls, p.format_metadata, c.platform, c.access_token_encrypted, c.account_id FROM posts p JOIN channels c ON p.channel_id = c.id WHERE p.status = 'scheduled' AND p.scheduled_at <= NOW() AND c.platform = 'tiktok';"
+      },
+      "name": "Query - Scheduled TikTok Posts",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 1,
+      "position": [450, 300],
+      "credentials": {
+        "postgres": "PostgreSQL - Marketing Hub"
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://open.tiktokapis.com/v2/post/publish/video/init/",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $json.access_token_encrypted }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"post_info\": {\n    \"title\": \"{{ $json.content_text }}\",\n    \"privacy_level\": \"PUBLIC_TO_EVERYONE\"\n  },\n  \"source_info\": {\n    \"source\": \"PULL_FROM_URL\",\n    \"video_url\": \"{{ $json.media_urls[0] }}\"\n  }\n}",
+        "options": {}
+      },
+      "name": "API - TikTok Publish",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 3,
+      "position": [650, 300]
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "schema": "public",
+        "table": "posts",
+        "whereColumns": "id",
+        "fieldsUi": {
+          "values": [
+            {
+              "fieldName": "status",
+              "fieldValue": "published"
+            },
+            {
+              "fieldName": "published_at",
+              "fieldValue": "={{ new Date().toISOString() }}"
+            },
+            {
+              "fieldName": "external_post_id",
+              "fieldValue": "={{ $node['API - TikTok Publish'].json.data.publish_id }}"
+            }
+          ]
+        }
+      },
+      "name": "DB - Update Post Status",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 1,
+      "position": [850, 300],
+      "credentials": {
+        "postgres": "PostgreSQL - Marketing Hub"
+      }
+    },
+    {
+      "parameters": {
+        "operation": "insert",
+        "schema": "public",
+        "table": "action_log",
+        "columns": "action_type,resource_type,resource_id,actor,actor_type,status,details",
+        "fieldsUi": {
+          "values": [
+            {
+              "fieldName": "action_type",
+              "fieldValue": "post_publishing"
+            },
+            {
+              "fieldName": "resource_type",
+              "fieldValue": "post"
+            },
+            {
+              "fieldName": "resource_id",
+              "fieldValue": "={{ $node['Query - Scheduled TikTok Posts'].json.id }}"
+            },
+            {
+              "fieldName": "actor",
+              "fieldValue": "n8n"
+            },
+            {
+              "fieldName": "actor_type",
+              "fieldValue": "system"
+            },
+            {
+              "fieldName": "status",
+              "fieldValue": "success"
+            },
+            {
+              "fieldName": "details",
+              "fieldValue": "={{ JSON.stringify({ platform: 'tiktok', external_id: $node['API - TikTok Publish'].json.data.publish_id }) }}"
+            }
+          ]
+        }
+      },
+      "name": "DB - Log Action",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 1,
+      "position": [1050, 300],
+      "credentials": {
+        "postgres": "PostgreSQL - Marketing Hub"
+      }
+    }
+  ],
+  "connections": {
+    "Trigger - Hourly": {
+      "main": [[{ "node": "Query - Scheduled TikTok Posts", "type": "main", "index": 0 }]]
+    },
+    "Query - Scheduled TikTok Posts": {
+      "main": [[{ "node": "API - TikTok Publish", "type": "main", "index": 0 }]]
+    },
+    "API - TikTok Publish": {
+      "main": [[{ "node": "DB - Update Post Status", "type": "main", "index": 0 }]]
+    },
+    "DB - Update Post Status": {
+      "main": [[{ "node": "DB - Log Action", "type": "main", "index": 0 }]]
+    }
+  },
+  "active": false,
+  "settings": {}
+}

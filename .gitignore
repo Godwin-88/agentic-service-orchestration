@@ -1,0 +1,63 @@
+# 1. Security & Secrets (Highest Priority)
+# Do NOT commit secrets, API keys, or certificates.
+.env
+.env.*
+!.env.example
+infrastructure/nginx/ssl/
+*.pem
+*.key
+*.crt
+.credentials/
+secrets/
+
+# 2. Operating System & IDE
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# 3. Python (Agents)
+agents/**/__pycache__/
+agents/**/*.py[cod]
+agents/**/*.pyo
+agents/**/*.pyd
+agents/venv/
+agents/.pytest_cache/
+agents/.coverage
+agents/htmlcov/
+agents/dist/
+agents/build/
+agents/*.egg-info/
+
+# 4. Frontend (TanStack Start / Bun)
+frontend/node_modules/
+frontend/.output/
+frontend/.vercel/
+frontend/.vinxi/
+frontend/.tanstack/
+frontend/bun.lockb
+frontend/.env
+frontend/.env.local
+frontend/.env.*.local
+
+# 5. Infrastructure & Docker
+volumes/
+logs/
+*.log
+docker-compose.override.yml
+
+# 6. Database
+infrastructure/db/backups/
+*.sql.gz
+*.dump
+!infrastructure/db/*.sql
+
+# 7. Temporary/Generic
+temp/
+tmp/
+.tmp/
+dist/
+build/
+coverage/

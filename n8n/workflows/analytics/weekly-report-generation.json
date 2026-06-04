@@ -1,0 +1,146 @@
+{
+  "name": "weekly-report-generation",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "weeks",
+              "interval": 1,
+              "field1": "monday",
+              "field2": 8
+            }
+          ]
+        }
+      },
+      "name": "Trigger - Weekly Mon 8 AM",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1,
+      "position": [
+        250,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "sql": "SELECT metric_date, SUM(total_reach) as reach, SUM(total_impressions) as impressions, SUM(total_engagements) as engagements, SUM(new_leads_captured) as leads FROM daily_kpi_summary WHERE metric_date >= CURRENT_DATE - INTERVAL '7 days' GROUP BY metric_date ORDER BY metric_date;"
+      },
+      "name": "Query - Weekly KPIs",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 1,
+      "position": [
+        450,
+        300
+      ],
+      "credentials": {
+        "postgres": "PostgreSQL - Marketing Hub"
+      }
+    },
+    {
+      "parameters": {
+        "functionCode": "const items = $input.all();\nlet totalReach = 0;\nlet totalLeads = 0;\n\nitems.forEach(item => {\n  totalReach += parseInt(item.json.reach || 0);\n  totalLeads += parseInt(item.json.leads || 0);\n});\n\nreturn {\n  json: {\n    summary: `Weekly Marketing Report Summary:\\n- Total Reach: ${totalReach}\\n- New Leads: ${totalLeads}\\n- Dates: ${items[0].json.metric_date} to ${items[items.length-1].json.metric_date}`\n  }\n};"
+      },
+      "name": "Transform - Generate Summary",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        650,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://hooks.slack.com/services/MOCK/WEBHOOK",
+        "method": "POST",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"text\": \"{{ $json.summary }}\"\n}",
+        "options": {}
+      },
+      "name": "HTTP - Slack Notification (Mock)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 3,
+      "position": [
+        850,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "insert",
+        "schema": "public",
+        "table": "action_log",
+        "columns": "action_type,resource_type,actor,actor_type,status,details",
+        "fieldsUi": {
+          "values": [
+            {"fieldName": "action_type", "fieldValue": "report_generation"},
+            {"fieldName": "resource_type", "fieldValue": "analytics"},
+            {"fieldName": "actor", "fieldValue": "n8n"},
+            {"fieldName": "actor_type", "fieldValue": "system"},
+            {"fieldName": "status", "fieldValue": "success"},
+            {"fieldName": "details", "fieldValue": "={{\"type\":\"weekly_report\"}}"}
+          ]
+        }
+      },
+      "name": "DB - Log Action",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 1,
+      "position": [
+        1050,
+        300
+      ],
+      "credentials": {
+        "postgres": "PostgreSQL - Marketing Hub"
+      }
+    }
+  ],
+  "connections": {
+    "Trigger - Weekly Mon 8 AM": {
+      "main": [
+        [
+          {
+            "node": "Query - Weekly KPIs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Query - Weekly KPIs": {
+      "main": [
+        [
+          {
+            "node": "Transform - Generate Summary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Transform - Generate Summary": {
+      "main": [
+        [
+          {
+            "node": "HTTP - Slack Notification (Mock)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP - Slack Notification (Mock)": {
+      "main": [
+        [
+          {
+            "node": "DB - Log Action",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {}
+}

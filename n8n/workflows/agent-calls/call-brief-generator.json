@@ -1,0 +1,126 @@
+{
+  "name": "call-brief-generator",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "weeks",
+              "interval": 1,
+              "triggerAtDay": ["monday"],
+              "triggerAtHour": 9
+            }
+          ]
+        }
+      },
+      "name": "Trigger - Weekly Mon 9 AM",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1,
+      "position": [250, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://host.docker.internal:8000/agents/generate-briefs",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"week\": \"{{ new Date().toISOString() }}\",\n  \"objective\": \"engagement\"\n}",
+        "options": {}
+      },
+      "name": "HTTP - LangGraph Brief Gen",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 3,
+      "position": [450, 300]
+    },
+    {
+      "parameters": {
+        "operation": "insert",
+        "schema": "public",
+        "table": "content_briefs",
+        "columns": "brief_date,topic,hook,content_format,target_channels,call_to_action,estimated_performance_band,reasoning",
+        "fieldsUi": {
+          "values": [
+            { "fieldName": "brief_date", "fieldValue": "={{ $json.brief_date }}" },
+            { "fieldName": "topic", "fieldValue": "={{ $json.topic }}" },
+            { "fieldName": "hook", "fieldValue": "={{ $json.hook }}" },
+            { "fieldName": "content_format", "fieldValue": "={{ $json.content_format }}" },
+            { "fieldName": "target_channels", "fieldValue": "={{ $json.target_channels }}" },
+            { "fieldName": "call_to_action", "fieldValue": "={{ $json.call_to_action }}" },
+            { "fieldName": "estimated_performance_band", "fieldValue": "={{ $json.estimated_performance_band }}" },
+            { "fieldName": "reasoning", "fieldValue": "={{ $json.reasoning }}" }
+          ]
+        }
+      },
+      "name": "DB - Insert Briefs",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 1,
+      "position": [650, 300],
+      "credentials": {
+        "postgres": "PostgreSQL - Marketing Hub"
+      }
+    },
+    {
+      "parameters": {
+        "operation": "insert",
+        "schema": "public",
+        "table": "action_log",
+        "columns": "action_type,resource_type,actor,actor_type,status,details",
+        "fieldsUi": {
+          "values": [
+            { "fieldName": "action_type", "fieldValue": "agent_call" },
+            { "fieldName": "resource_type", "fieldValue": "content_brief" },
+            { "fieldName": "actor", "fieldValue": "brief_gen_agent" },
+            { "fieldName": "actor_type", "fieldValue": "agent" },
+            { "fieldName": "status", "fieldValue": "success" },
+            { "fieldName": "details", "fieldValue": "={{ { \"briefs_generated\": $input.all().length } }}" }
+          ]
+        }
+      },
+      "name": "DB - Log Success",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 1,
+      "position": [850, 300],
+      "credentials": {
+        "postgres": "PostgreSQL - Marketing Hub"
+      }
+    }
+  ],
+  "connections": {
+    "Trigger - Weekly Mon 9 AM": {
+      "main": [
+        [
+          {
+            "node": "HTTP - LangGraph Brief Gen",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP - LangGraph Brief Gen": {
+      "main": [
+        [
+          {
+            "node": "DB - Insert Briefs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "DB - Insert Briefs": {
+      "main": [
+        [
+          {
+            "node": "DB - Log Success",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {}
+}

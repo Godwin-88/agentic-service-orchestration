@@ -1,0 +1,147 @@
+{
+  "name": "anomaly-detection",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "days",
+              "interval": 1,
+              "triggerAtHour": 8
+            }
+          ]
+        }
+      },
+      "name": "Trigger - Daily",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1,
+      "position": [
+        250,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "WITH baseline AS (\n  SELECT channel_id, AVG(reach) as avg_reach\n  FROM post_metrics\n  WHERE metric_date >= CURRENT_DATE - INTERVAL '14 days'\n    AND metric_date < CURRENT_DATE\n  GROUP BY channel_id\n),\ncurrent AS (\n  SELECT channel_id, SUM(reach) as current_reach\n  FROM post_metrics\n  WHERE metric_date = CURRENT_DATE - INTERVAL '1 day'\n  GROUP BY channel_id\n)\nSELECT \n  c.channel_id, \n  b.avg_reach as expected_value, \n  c.current_reach as actual_value,\n  ((c.current_reach - b.avg_reach) / NULLIF(b.avg_reach, 0)) * 100 as deviation_percent\nFROM current c\nJOIN baseline b ON c.channel_id = b.channel_id\nWHERE ABS(((c.current_reach - b.avg_reach) / NULLIF(b.avg_reach, 0))) > 0.3;"
+      },
+      "name": "Query - Detect Reach Anomalies",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 1,
+      "position": [
+        450,
+        300
+      ],
+      "credentials": {
+        "postgres": "PostgreSQL - Marketing Hub"
+      }
+    },
+    {
+      "parameters": {
+        "operation": "insert",
+        "schema": "public",
+        "table": "anomalies",
+        "fieldsUi": {
+          "values": [
+            {
+              "fieldName": "channel_id",
+              "fieldValue": "={{ $json.channel_id }}"
+            },
+            {
+              "fieldName": "anomaly_type",
+              "fieldValue": "reach_drop"
+            },
+            {
+              "fieldName": "severity",
+              "fieldValue": "medium"
+            },
+            {
+              "fieldName": "metric_name",
+              "fieldValue": "reach"
+            },
+            {
+              "fieldName": "expected_value",
+              "fieldValue": "={{ $json.expected_value }}"
+            },
+            {
+              "fieldName": "actual_value",
+              "fieldValue": "={{ $json.actual_value }}"
+            },
+            {
+              "fieldName": "anomaly_description",
+              "fieldValue": "={{ `Reach deviated by ${Number($json.deviation_percent).toFixed(2)}% from baseline.` }}"
+            }
+          ]
+        },
+        "options": {
+          "returnFields": "id"
+        }
+      },
+      "name": "DB - Insert Anomaly",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 1,
+      "position": [
+        650,
+        300
+      ],
+      "credentials": {
+        "postgres": "PostgreSQL - Marketing Hub"
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://marketing_hub_n8n:5678/webhook/trigger/anomaly-detected",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"anomaly_id\": \"{{ $json.id }}\",\n  \"anomaly_type\": \"reach_drop\",\n  \"anomaly_description\": \"{{ $json.anomaly_description }}\"\n}",
+        "options": {}
+      },
+      "name": "HTTP - Trigger Diagnostic",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 3,
+      "position": [
+        850,
+        300
+      ]
+    }
+  ],
+  "connections": {
+    "Trigger - Daily": {
+      "main": [
+        [
+          {
+            "node": "Query - Detect Reach Anomalies",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Query - Detect Reach Anomalies": {
+      "main": [
+        [
+          {
+            "node": "DB - Insert Anomaly",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "DB - Insert Anomaly": {
+      "main": [
+        [
+          {
+            "node": "HTTP - Trigger Diagnostic",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {}
+}

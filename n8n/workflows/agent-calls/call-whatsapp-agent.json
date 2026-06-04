@@ -1,0 +1,115 @@
+{
+  "name": "call-whatsapp-agent",
+  "nodes": [
+    {
+      "parameters": {
+        "path": "webhook/whatsapp-inbound",
+        "method": "POST",
+        "authentication": "none"
+      },
+      "name": "Webhook - Inbound WhatsApp",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [250, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://host.docker.internal:8000/agents/whatsapp-reply",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"message\": \"{{ $json.body.message }}\",\n  \"from\": \"{{ $json.body.from }}\",\n  \"thread_id\": \"{{ $json.body.thread_id }}\"\n}",
+        "options": {}
+      },
+      "name": "HTTP - LangGraph WhatsApp Agent",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 3,
+      "position": [450, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://graph.facebook.com/v19.0/{{ $json.account_id }}/messages",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $json.access_token }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"messaging_product\": \"whatsapp\",\n  \"to\": \"{{ $json.recipient_phone }}\",\n  \"type\": \"text\",\n  \"text\": {\n    \"body\": \"{{ $json.reply_text }}\"\n  }\n}",
+        "options": {}
+      },
+      "name": "API - WhatsApp Send Reply",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 3,
+      "position": [650, 300]
+    },
+    {
+      "parameters": {
+        "operation": "insert",
+        "schema": "public",
+        "table": "whatsapp_messages",
+        "columns": "conversation_id,direction,message_type,content,external_message_id,created_at",
+        "fieldsUi": {
+          "values": [
+            { "fieldName": "conversation_id", "fieldValue": "={{ $json.conversation_id }}" },
+            { "fieldName": "direction", "fieldValue": "outbound" },
+            { "fieldName": "message_type", "fieldValue": "text" },
+            { "fieldName": "content", "fieldValue": "={{ $node['HTTP - LangGraph WhatsApp Agent'].json.reply_text }}" },
+            { "fieldName": "external_message_id", "fieldValue": "={{ $node['API - WhatsApp Send Reply'].json.messages[0].id }}" },
+            { "fieldName": "created_at", "fieldValue": "=now()" }
+          ]
+        }
+      },
+      "name": "DB - Log WhatsApp Message",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 1,
+      "position": [850, 300],
+      "credentials": {
+        "postgres": "PostgreSQL - Marketing Hub"
+      }
+    }
+  ],
+  "connections": {
+    "Webhook - Inbound WhatsApp": {
+      "main": [
+        [
+          {
+            "node": "HTTP - LangGraph WhatsApp Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP - LangGraph WhatsApp Agent": {
+      "main": [
+        [
+          {
+            "node": "API - WhatsApp Send Reply",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "API - WhatsApp Send Reply": {
+      "main": [
+        [
+          {
+            "node": "DB - Log WhatsApp Message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {}
+}
