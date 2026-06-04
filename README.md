@@ -44,6 +44,43 @@ This repository delivers a production-ready, full-stack "Agentic" ecosystem. It 
 
 ---
 
+## 🏛️ System Architecture
+
+```mermaid
+graph TD
+    User((Admin/User)) --> Nginx[Nginx Gateway & SSL]
+    
+    subgraph "Public Facing"
+    Nginx
+    end
+    
+    subgraph "Application Layer"
+    Nginx --> UI[TanStack Start UI]
+    Nginx --> Agents[FastAPI AI Agent Service]
+    Nginx --> N8n[n8n Workflow Engine]
+    Nginx --> Metabase[Metabase Analytics]
+    end
+    
+    subgraph "Data & Memory Layer"
+    Agents <--> Postgres[(PostgreSQL / pgvector)]
+    Agents <--> Redis[Redis Cache]
+    N8n --> Postgres
+    Metabase --> Postgres
+    end
+    
+    subgraph "Integrations"
+    N8n --> SocialAPIs[Social Media APIs]
+    N8n --> WhatsApp[WhatsApp Cloud API]
+    Agents --> GroqLLM[LLMs: Groq/Claude/OpenAI]
+    end
+    
+    style Nginx fill:#f9f,stroke:#333,stroke-width:2px
+    style Postgres fill:#cce,stroke:#333,stroke-width:2px
+    style Agents fill:#ccf,stroke:#333,stroke-width:2px
+```
+
+---
+
 ## 🤖 AI Agent API Reference
 
 The `agents/` service (Port 8000) provides 9 stateful reasoning endpoints. All require `X-API-Key` authentication.
