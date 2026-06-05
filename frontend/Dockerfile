@@ -9,6 +9,7 @@ RUN npm install
 
 # Copy source and build
 COPY . .
+ENV NITRO_PRESET=node-server
 RUN npm run build
 
 # Production stage

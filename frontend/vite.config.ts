@@ -12,4 +12,8 @@ export default defineConfig({
     // nitro/vite builds from this
     server: { entry: "server" },
   },
+  // Force-enable Nitro for production builds in Docker
+  nitro: {
+    preset: "node-server",
+  },
 });

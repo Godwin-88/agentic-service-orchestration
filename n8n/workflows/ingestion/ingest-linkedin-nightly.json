@@ -29,7 +29,10 @@
       "typeVersion": 1,
       "position": [450, 300],
       "credentials": {
-        "postgres": "PostgreSQL - Marketing Hub"
+        "postgres": {
+          "id": "jtNPm35xuYntlcNR",
+          "name": "PostgreSQL - Marketing Hub"
+        }
       }
     },
     {
@@ -90,7 +93,10 @@
       "typeVersion": 1,
       "position": [1050, 300],
       "credentials": {
-        "postgres": "PostgreSQL - Marketing Hub"
+        "postgres": {
+          "id": "jtNPm35xuYntlcNR",
+          "name": "PostgreSQL - Marketing Hub"
+        }
       }
     },
     {
@@ -116,7 +122,10 @@
       "typeVersion": 1,
       "position": [1250, 300],
       "credentials": {
-        "postgres": "PostgreSQL - Marketing Hub"
+        "postgres": {
+          "id": "jtNPm35xuYntlcNR",
+          "name": "PostgreSQL - Marketing Hub"
+        }
       }
     }
   ],
