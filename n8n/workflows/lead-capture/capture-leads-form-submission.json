@@ -5,16 +5,21 @@
       "parameters": {
         "path": "webhook/form-submission",
         "method": "POST",
-        "authentication": "none"
+        "authentication": "headerAuth",
+        "responseMode": "onReceived",
+        "responseData": "firstEntryJson"
       },
       "name": "Webhook - Form Submission",
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 1,
-      "position": [250, 300]
+      "position": [250, 300],
+      "credentials": {
+        "httpHeaderAuth": "Webhook - Header Auth"
+      }
     },
     {
       "parameters": {
-        "jsCode": "const payload = $input.first().json.body;\n\nreturn {\n  json: {\n    email: payload.email || '',\n    first_name: payload.first_name || null,\n    last_name: payload.last_name || null,\n    phone: payload.phone || null,\n    source_channel: payload.source || 'web_form',\n    utm_source: payload.utm_source,\n    utm_medium: payload.utm_medium,\n    utm_campaign: payload.utm_campaign,\n    interaction_type: 'form_fill',\n    message_text: `Form submitted: ${payload.form_name || 'contact_form'}`,\n    interaction_metadata: JSON.stringify({\n      form_id: payload.form_id,\n      page_url: payload.page_url,\n      ip_address: payload.ip_address\n    }),\n    created_at: new Date().toISOString()\n  }\n};"
+        "jsCode": "const payload = $input.first().json.body;\n\nif (!payload.email || !payload.email.includes('@')) {\n  throw new Error('Invalid or missing email in payload');\n}\n\nreturn {\n  json: {\n    email: payload.email.trim().toLowerCase(),\n    first_name: payload.first_name || null,\n    last_name: payload.last_name || null,\n    phone: payload.phone || null,\n    source_channel: payload.source || 'web_form',\n    utm_source: payload.utm_source || null,\n    utm_medium: payload.utm_medium || null,\n    utm_campaign: payload.utm_campaign || null,\n    interaction_type: 'form_fill',\n    message_text: `Form submitted: ${payload.form_name || 'contact_form'}`,\n    interaction_metadata: JSON.stringify({\n      form_id: payload.form_id,\n      page_url: payload.page_url,\n      ip_address: payload.ip_address\n    }),\n    created_at: new Date().toISOString()\n  }\n};"
       },
       "name": "Transform - Normalize Lead",
       "type": "n8n-nodes-base.code",
@@ -24,11 +29,14 @@
     {
       "parameters": {
         "operation": "executeQuery",
-        "query": "SELECT id FROM leads WHERE LOWER(email) = LOWER('{{ $node['Transform - Normalize Lead'].json.email }}') LIMIT 1;"
+        "query": "SELECT id FROM leads WHERE email = $1 LIMIT 1;",
+        "additionalFields": {
+          "queryParams": "={{ JSON.stringify([$node['Transform - Normalize Lead'].json.email]) }}"
+        }
       },
       "name": "Query - Check Existing Lead",
       "type": "n8n-nodes-base.postgres",
-      "typeVersion": 1,
+      "typeVersion": 2,
       "position": [650, 300],
       "credentials": {
         "postgres": "PostgreSQL - Marketing Hub"
@@ -58,29 +66,15 @@
     },
     {
       "parameters": {
-        "operation": "insert",
-        "schema": "public",
-        "table": "leads",
-        "columns": "email,first_name,last_name,phone,source_channel,utm_source,utm_medium,utm_campaign,lead_stage,lead_score,created_at",
-        "fieldsUi": {
-          "values": [
-            { "fieldName": "email", "fieldValue": "={{ $node['Transform - Normalize Lead'].json.email }}" },
-            { "fieldName": "first_name", "fieldValue": "={{ $node['Transform - Normalize Lead'].json.first_name }}" },
-            { "fieldName": "last_name", "fieldValue": "={{ $node['Transform - Normalize Lead'].json.last_name }}" },
-            { "fieldName": "phone", "fieldValue": "={{ $node['Transform - Normalize Lead'].json.phone }}" },
-            { "fieldName": "source_channel", "fieldValue": "={{ $node['Transform - Normalize Lead'].json.source_channel }}" },
-            { "fieldName": "utm_source", "fieldValue": "={{ $node['Transform - Normalize Lead'].json.utm_source }}" },
-            { "fieldName": "utm_medium", "fieldValue": "={{ $node['Transform - Normalize Lead'].json.utm_medium }}" },
-            { "fieldName": "utm_campaign", "fieldValue": "={{ $node['Transform - Normalize Lead'].json.utm_campaign }}" },
-            { "fieldName": "lead_stage", "fieldValue": "new" },
-            { "fieldName": "lead_score", "fieldValue": "10" },
-            { "fieldName": "created_at", "fieldValue": "={{ $node['Transform - Normalize Lead'].json.created_at }}" }
-          ]
+        "operation": "executeQuery",
+        "query": "WITH inserted AS (\n  INSERT INTO leads (email, first_name, last_name, phone, source_channel, utm_source, utm_medium, utm_campaign, lead_stage, lead_score, created_at)\n  VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'new', 10, $9)\n  RETURNING id\n)\nINSERT INTO lead_interactions (lead_id, interaction_type, message_text, interaction_metadata, created_at)\nSELECT id, 'form_fill', $10, $11, NOW() FROM inserted;",
+        "additionalFields": {
+          "queryParams": "={{ JSON.stringify([\n  $node['Transform - Normalize Lead'].json.email,\n  $node['Transform - Normalize Lead'].json.first_name,\n  $node['Transform - Normalize Lead'].json.last_name,\n  $node['Transform - Normalize Lead'].json.phone,\n  $node['Transform - Normalize Lead'].json.source_channel,\n  $node['Transform - Normalize Lead'].json.utm_source,\n  $node['Transform - Normalize Lead'].json.utm_medium,\n  $node['Transform - Normalize Lead'].json.utm_campaign,\n  $node['Transform - Normalize Lead'].json.created_at,\n  $node['Transform - Normalize Lead'].json.message_text,\n  $node['Transform - Normalize Lead'].json.interaction_metadata\n]) }}"
         }
       },
       "name": "DB - Insert New Lead",
       "type": "n8n-nodes-base.postgres",
-      "typeVersion": 1,
+      "typeVersion": 2,
       "position": [1050, 200],
       "credentials": {
         "postgres": "PostgreSQL - Marketing Hub"
@@ -89,11 +83,14 @@
     {
       "parameters": {
         "operation": "executeQuery",
-        "query": "INSERT INTO lead_interactions (lead_id, interaction_type, message_text, interaction_metadata, created_at) VALUES ((SELECT id FROM leads WHERE LOWER(email) = LOWER('{{ $node['Transform - Normalize Lead'].json.email }}')), 'form_fill', '{{ $node['Transform - Normalize Lead'].json.message_text }}', '{{ $node['Transform - Normalize Lead'].json.interaction_metadata }}', NOW()); UPDATE leads SET lead_score = lead_score + 10 WHERE LOWER(email) = LOWER('{{ $node['Transform - Normalize Lead'].json.email }}');"
+        "query": "INSERT INTO lead_interactions (lead_id, interaction_type, message_text, interaction_metadata, created_at)\nSELECT id, 'form_fill', $2, $3, NOW() FROM leads WHERE email = $1;\n\nUPDATE leads\nSET lead_score = lead_score + 10\nWHERE email = $1;",
+        "additionalFields": {
+          "queryParams": "={{ JSON.stringify([\n  $node['Transform - Normalize Lead'].json.email,\n  $node['Transform - Normalize Lead'].json.message_text,\n  $node['Transform - Normalize Lead'].json.interaction_metadata\n]) }}"
+        }
       },
       "name": "DB - Log Interaction (Existing)",
       "type": "n8n-nodes-base.postgres",
-      "typeVersion": 1,
+      "typeVersion": 2,
       "position": [1050, 400],
       "credentials": {
         "postgres": "PostgreSQL - Marketing Hub"
@@ -101,28 +98,36 @@
     },
     {
       "parameters": {
-        "operation": "insert",
-        "schema": "public",
-        "table": "action_log",
-        "columns": "action_type,resource_type,actor,actor_type,status,details",
-        "fieldsUi": {
-          "values": [
-            { "fieldName": "action_type", "fieldValue": "lead_capture" },
-            { "fieldName": "resource_type", "fieldValue": "lead" },
-            { "fieldName": "actor", "fieldValue": "webhook" },
-            { "fieldName": "actor_type", "fieldValue": "system" },
-            { "fieldName": "status", "fieldValue": "success" },
-            { "fieldName": "details", "fieldValue": "={{ JSON.stringify({ email: $node['Transform - Normalize Lead'].json.email, type: 'form_submission' }) }}" }
-          ]
+        "operation": "executeQuery",
+        "query": "INSERT INTO action_log (action_type, resource_type, actor, actor_type, status, details)\nVALUES ('lead_capture', 'lead', 'webhook', 'system', 'success', $1);",
+        "additionalFields": {
+          "queryParams": "={{ JSON.stringify([\n  JSON.stringify({ email: $node['Transform - Normalize Lead'].json.email, type: 'form_submission' })\n]) }}"
         }
       },
       "name": "DB - Log Success",
       "type": "n8n-nodes-base.postgres",
-      "typeVersion": 1,
+      "typeVersion": 2,
       "position": [1250, 300],
       "credentials": {
         "postgres": "PostgreSQL - Marketing Hub"
       }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO action_log (action_type, resource_type, actor, actor_type, status, details)\nVALUES ('lead_capture', 'lead', 'webhook', 'system', 'error', $1);",
+        "additionalFields": {
+          "queryParams": "={{ JSON.stringify([\n  JSON.stringify({ error: $node['Transform - Normalize Lead'].json?.email || 'unknown', message: $input.first().json.message || 'Workflow error' })\n]) }}"
+        }
+      },
+      "name": "DB - Log Error",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2,
+      "position": [1250, 500],
+      "credentials": {
+        "postgres": "PostgreSQL - Marketing Hub"
+      },
+      "executeOnError": true
     }
   ],
   "connections": {
@@ -149,5 +154,9 @@
     }
   },
   "active": false,
-  "settings": {}
+  "settings": {
+    "errorWorkflow": "",
+    "saveManualExecutions": true,
+    "callerPolicy": "workflowsFromSameOwner"
+  }
 }

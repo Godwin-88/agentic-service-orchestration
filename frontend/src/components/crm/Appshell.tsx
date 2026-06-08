@@ -1,6 +1,6 @@
 import { Link, useRouterState, Outlet } from "@tanstack/react-router";
 import {
-  LayoutDashboard, Users, GitBranch, FileText, Activity, Bot, Bell, Search, Sparkles, ShieldCheck, Calendar,
+  LayoutDashboard, Users, GitBranch, FileText, Activity, Bot, Bell, Search, Sparkles, ShieldCheck, Calendar, BarChart3,
 } from "lucide-react";
 import { motion } from "framer-motion";
 
@@ -14,6 +14,7 @@ const nav = [
   { to: "/follow-ups", label: "Follow-ups", icon: Activity, mod: "I" },
   { to: "/retention", label: "Retention", icon: ShieldCheck, mod: "J" },
   { to: "/agents", label: "Agents", icon: Bot, mod: "Λ" },
+  { to: "/analytics", label: "Analytics", icon: BarChart3, mod: "L" },
 ];
 
 export function AppShell() {

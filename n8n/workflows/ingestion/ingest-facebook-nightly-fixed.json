@@ -1,0 +1,157 @@
+{
+  "name": "ingest-facebook-nightly",
+  "_fix_notes": [
+    "1. Split from combined Meta workflow — Facebook and Instagram have different endpoints, metric names, and scopes",
+    "2. LIMIT removed from channel query",
+    "3. Column renamed to access_token — add decryption Code node if truly encrypted at rest",
+    "4. Correct endpoint: graph.facebook.com/v18.0/<PAGE_ID>/insights",
+    "5. Correct Facebook metric names: page_impressions, page_impressions_unique (reach), page_engaged_users",
+    "6. Auth moved to Authorization Bearer header",
+    "7. Init - Channel State node preserves channel_id/platform after HTTP call",
+    "8. IF node gates on absence of error before Transform",
+    "9. platform field included in DB upsert",
+    "10. ON CONFLICT DO UPDATE replaces plain INSERT",
+    "11. Failure path logs separately; success log only fires on verified success"
+  ],
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            { "field": "days", "interval": 1, "triggerAtHour": 2, "triggerAtMinute": 0 }
+          ]
+        }
+      },
+      "name": "Trigger - Daily 2:00 AM UTC",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1,
+      "position": [100, 300]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT id AS channel_id, account_id, access_token FROM channels WHERE platform = 'facebook' AND connected_status = 'connected';"
+      },
+      "name": "Query - Connected Facebook",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 1,
+      "position": [300, 300],
+      "credentials": {
+        "postgres": { "id": "jtNPm35xuYntlcNR", "name": "PostgreSQL - Marketing Hub" }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Snapshot channel context — n8n HTTP nodes drop upstream fields\nconst yesterday = new Date();\nyesterday.setDate(yesterday.getDate() - 1);\nconst since = Math.floor(new Date(yesterday.toISOString().split('T')[0] + 'T00:00:00Z').getTime() / 1000);\nconst until = Math.floor(new Date(yesterday.toISOString().split('T')[0] + 'T23:59:59Z').getTime() / 1000);\n\nreturn $input.all().map(item => ({\n  json: {\n    channel_id: item.json.channel_id,\n    account_id: item.json.account_id,\n    access_token: item.json.access_token,\n    platform: 'facebook',\n    metric_date: yesterday.toISOString().split('T')[0],\n    since,\n    until\n  }\n}));"
+      },
+      "name": "Init - Channel State",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [500, 300]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "=https://graph.facebook.com/v18.0/{{ $json.account_id }}/insights",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Authorization", "value": "=Bearer {{ $json.access_token }}" }
+          ]
+        },
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            { "name": "metric", "value": "page_impressions,page_impressions_unique,page_engaged_users,page_views_total" },
+            { "name": "period", "value": "day" },
+            { "name": "since", "value": "={{ $json.since }}" },
+            { "name": "until", "value": "={{ $json.until }}" }
+          ]
+        },
+        "authentication": "none",
+        "options": {}
+      },
+      "name": "API - Facebook Insights",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 3,
+      "position": [700, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            { "value1": "={{ $json.error }}", "operation": "isEmpty" }
+          ]
+        }
+      },
+      "name": "IF - API Success",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [900, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const apiItems = $input.all();\nconst channelItems = $('Init - Channel State').all();\n\nreturn apiItems.map((apiItem, idx) => {\n  const channel = channelItems[idx]?.json || {};\n  const data = apiItem.json.data || [];\n\n  let reach = 0, impressions = 0, engagement = 0, profileViews = 0;\n\n  data.forEach(metric => {\n    const val = metric.values?.[0]?.value || 0;\n    if (metric.name === 'page_impressions_unique') reach = val;\n    if (metric.name === 'page_impressions')        impressions = val;\n    if (metric.name === 'page_engaged_users')      engagement = val;\n    if (metric.name === 'page_views_total')        profileViews = val;\n  });\n\n  return {\n    json: {\n      channel_id:          channel.channel_id,\n      platform:            'facebook',\n      metric_date:         channel.metric_date,\n      reach:               parseInt(reach),\n      impressions:         parseInt(impressions),\n      engagements:         parseInt(engagement),\n      clicks:              0,\n      likes:               0,\n      comments:            0,\n      shares:              0,\n      saves:               0,\n      video_views:         0,\n      watch_time_seconds:  0,\n      profile_visits:      parseInt(profileViews),\n      follower_count:      0,\n      created_at:          new Date().toISOString()\n    }\n  };\n});"
+      },
+      "name": "Transform - Facebook Metrics",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1100, 200]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO post_metrics (\n  channel_id, platform, metric_date,\n  reach, impressions, engagements, clicks,\n  likes, comments, shares, saves,\n  video_views, watch_time_seconds, profile_visits, follower_count,\n  created_at\n) VALUES (\n  '{{ $json.channel_id }}', '{{ $json.platform }}', '{{ $json.metric_date }}',\n  {{ $json.reach }}, {{ $json.impressions }}, {{ $json.engagements }}, {{ $json.clicks }},\n  {{ $json.likes }}, {{ $json.comments }}, {{ $json.shares }}, {{ $json.saves }},\n  {{ $json.video_views }}, {{ $json.watch_time_seconds }}, {{ $json.profile_visits }}, {{ $json.follower_count }},\n  '{{ $json.created_at }}'\n)\nON CONFLICT (channel_id, metric_date)\nDO UPDATE SET\n  reach           = EXCLUDED.reach,\n  impressions     = EXCLUDED.impressions,\n  engagements     = EXCLUDED.engagements,\n  profile_visits  = EXCLUDED.profile_visits,\n  created_at      = EXCLUDED.created_at;"
+      },
+      "name": "DB - Upsert Metrics",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 1,
+      "position": [1300, 200],
+      "credentials": {
+        "postgres": { "id": "jtNPm35xuYntlcNR", "name": "PostgreSQL - Marketing Hub" }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO action_log (action_type, resource_type, actor, actor_type, status, details, created_at)\nVALUES ('workflow_execution', 'ingestion', 'n8n', 'system', 'success',\n  '{{ JSON.stringify({ workflow: \"ingest-facebook-nightly\", metrics_count: $input.all().length }) }}',\n  now());"
+      },
+      "name": "DB - Log Success",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 1,
+      "position": [1500, 200],
+      "credentials": {
+        "postgres": { "id": "jtNPm35xuYntlcNR", "name": "PostgreSQL - Marketing Hub" }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO action_log (action_type, resource_type, actor, actor_type, status, details, created_at)\nVALUES ('workflow_execution', 'ingestion', 'n8n', 'system', 'failure',\n  '{{ JSON.stringify({ workflow: \"ingest-facebook-nightly\", error: $json.error }) }}',\n  now());"
+      },
+      "name": "DB - Log Failure",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 1,
+      "position": [1100, 450],
+      "credentials": {
+        "postgres": { "id": "jtNPm35xuYntlcNR", "name": "PostgreSQL - Marketing Hub" }
+      }
+    }
+  ],
+  "connections": {
+    "Trigger - Daily 2:00 AM UTC":  { "main": [[{ "node": "Query - Connected Facebook",   "type": "main", "index": 0 }]] },
+    "Query - Connected Facebook":   { "main": [[{ "node": "Init - Channel State",          "type": "main", "index": 0 }]] },
+    "Init - Channel State":         { "main": [[{ "node": "API - Facebook Insights",        "type": "main", "index": 0 }]] },
+    "API - Facebook Insights":      { "main": [[{ "node": "IF - API Success",               "type": "main", "index": 0 }]] },
+    "IF - API Success": {
+      "main": [
+        [{ "node": "Transform - Facebook Metrics", "type": "main", "index": 0 }],
+        [{ "node": "DB - Log Failure",             "type": "main", "index": 0 }]
+      ]
+    },
+    "Transform - Facebook Metrics": { "main": [[{ "node": "DB - Upsert Metrics", "type": "main", "index": 0 }]] },
+    "DB - Upsert Metrics":          { "main": [[{ "node": "DB - Log Success",    "type": "main", "index": 0 }]] }
+  },
+  "active": false,
+  "settings": {}
+}

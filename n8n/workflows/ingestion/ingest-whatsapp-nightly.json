@@ -1,5 +1,28 @@
 {
   "name": "ingest-whatsapp-nightly",
+  "_fix_notes": [
+    "1. LIMIT 5 removed from channel query",
+    "2. SQL alias changed to access_token (plaintext) — rename column in DB or add decryption if truly encrypted",
+    "3. Base URL corrected from graph.instagram.com to graph.facebook.com",
+    "4. Endpoint changed to /analytics (aggregate counts) — /messages GET bulk listing does not exist in WhatsApp Cloud API",
+    "5. Auth moved to Authorization Bearer header",
+    "6. Date range params added: granularity DAY, rolling 1-day window for nightly batch",
+    "7. Merge node (Init - Channel State) preserves channel_id after HTTP call",
+    "8. Transform rewritten for analytics response shape (pre-aggregated, no per-message iteration)",
+    "9. WhatsApp-specific columns (sent_count, delivered_count, read_count, failed_count) added to DB insert",
+    "10. platform field added to DB insert",
+    "11. Upsert (ON CONFLICT DO UPDATE) replaces plain insert",
+    "12. Error path logs failure separately; success log only fires on verified success",
+    "13. active left false — flip to true after testing",
+    "",
+    "IMPORTANT: The /analytics endpoint requires your Meta app to have whatsapp_business_management permission.",
+    "Ensure your WABA token has this scope before activating.",
+    "Also add columns sent_count, delivered_count, read_count, failed_count to post_metrics table:",
+    "  ALTER TABLE post_metrics ADD COLUMN IF NOT EXISTS sent_count INT DEFAULT 0;",
+    "  ALTER TABLE post_metrics ADD COLUMN IF NOT EXISTS delivered_count INT DEFAULT 0;",
+    "  ALTER TABLE post_metrics ADD COLUMN IF NOT EXISTS read_count INT DEFAULT 0;",
+    "  ALTER TABLE post_metrics ADD COLUMN IF NOT EXISTS failed_count INT DEFAULT 0;"
+  ],
   "nodes": [
     {
       "parameters": {
@@ -17,109 +40,150 @@
       "name": "Trigger - Daily 2:40 AM UTC",
       "type": "n8n-nodes-base.scheduleTrigger",
       "typeVersion": 1,
-      "position": [250, 300]
+      "position": [100, 300]
     },
     {
       "parameters": {
         "operation": "executeQuery",
-        "query": "SELECT id AS channel_id, account_id, access_token_encrypted FROM channels WHERE platform = 'whatsapp' AND connected_status = 'connected' LIMIT 5;"
+        "query": "SELECT id AS channel_id, account_id, access_token FROM channels WHERE platform = 'whatsapp' AND connected_status = 'connected';"
       },
       "name": "Query - Connected WhatsApp",
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 1,
-      "position": [450, 300],
+      "position": [300, 300],
       "credentials": {
         "postgres": {"id": "jtNPm35xuYntlcNR", "name": "PostgreSQL - Marketing Hub"}
       }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Compute yesterday's date range for the analytics window\n// and preserve channel context for use after HTTP call\nconst items = $input.all();\nconst now = new Date();\nconst yesterday = new Date(now);\nyesterday.setDate(now.getDate() - 1);\nyesterday.setHours(0, 0, 0, 0);\nconst endOfYesterday = new Date(yesterday);\nendOfYesterday.setHours(23, 59, 59, 999);\n\nconst startTs = Math.floor(yesterday.getTime() / 1000);\nconst endTs = Math.floor(endOfYesterday.getTime() / 1000);\n\nreturn items.map(item => ({\n  json: {\n    channel_id: item.json.channel_id,\n    account_id: item.json.account_id,\n    access_token: item.json.access_token,\n    start_ts: startTs,\n    end_ts: endTs,\n    metric_date: yesterday.toISOString().split('T')[0]\n  }\n}));"
+      },
+      "name": "Init - Channel State",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [500, 300]
     },
     {
       "parameters": {
         "method": "GET",
-        "url": "https://graph.instagram.com/v18.0/{{ $json.account_id }}/messages?access_token={{ $json.access_token_encrypted }}&fields=id,timestamp,status,message_status",
+        "url": "=https://graph.facebook.com/v18.0/{{ $json.account_id }}",
         "authentication": "none",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $json.access_token }}"
+            }
+          ]
+        },
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "fields",
+              "value": "=analytics.start({{ $json.start_ts }}).end({{ $json.end_ts }}).granularity(DAY).phone_numbers([])"
+            }
+          ]
+        },
         "options": {}
       },
-      "name": "API - WhatsApp Messages",
+      "name": "API - WhatsApp Analytics",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 3,
-      "position": [650, 300]
+      "position": [700, 300]
     },
     {
       "parameters": {
-        "jsCode": "const items = $input.all();\nconst transformed = [];\n\nitems.forEach((item) => {\n  const messages = item.json.data || [];\n  const channelId = item.json.channel_id;\n  \n  let sent = 0;\n  let delivered = 0;\n  let read = 0;\n  let failed = 0;\n  \n  messages.forEach(msg => {\n    if (msg.status === 'sent') sent++;\n    else if (msg.status === 'delivered') delivered++;\n    else if (msg.status === 'read') read++;\n    else if (msg.status === 'failed') failed++;\n  });\n  \n  transformed.push({\n    json: {\n      channel_id: channelId,\n      platform: 'whatsapp',\n      metric_date: new Date().toISOString().split('T')[0],\n      reach: delivered + read,\n      impressions: sent,\n      engagements: read,\n      clicks: 0,\n      likes: 0,\n      comments: 0,\n      shares: 0,\n      saves: 0,\n      video_views: 0,\n      watch_time_seconds: 0,\n      profile_visits: 0,\n      follower_count: 0,\n      conversation_count: messages.length,\n      sent_count: sent,\n      delivered_count: delivered,\n      read_count: read,\n      failed_count: failed,\n      created_at: new Date().toISOString()\n    }\n  });\n});\n\nreturn transformed;"
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{ $json.error }}",
+              "operation": "isEmpty"
+            }
+          ]
+        }
+      },
+      "name": "IF - API Success",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [900, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Merge API analytics response with upstream channel context\nconst apiItems = $input.all();\nconst channelItems = $('Init - Channel State').all();\n\nreturn apiItems.map((apiItem, idx) => {\n  const channel = channelItems[idx]?.json || {};\n  const analyticsData = apiItem.json.analytics?.data || [];\n\n  // Analytics endpoint returns array of daily data points\n  // Each point: { start: ts, end: ts, sent: N, delivered: N, read: N, failed: N }\n  const totals = analyticsData.reduce((acc, point) => {\n    acc.sent      += (point.sent      || 0);\n    acc.delivered += (point.delivered || 0);\n    acc.read      += (point.read      || 0);\n    acc.failed    += (point.failed    || 0);\n    return acc;\n  }, { sent: 0, delivered: 0, read: 0, failed: 0 });\n\n  return {\n    json: {\n      channel_id:       channel.channel_id,\n      platform:         'whatsapp',\n      metric_date:      channel.metric_date,\n      // Standard post_metrics columns\n      reach:            totals.delivered + totals.read,\n      impressions:      totals.sent,\n      engagements:      totals.read,\n      clicks:           0,\n      likes:            0,\n      comments:         0,\n      shares:           0,\n      saves:            0,\n      video_views:      0,\n      watch_time_seconds: 0,\n      profile_visits:   0,\n      follower_count:   0,\n      // WhatsApp-specific columns\n      sent_count:       totals.sent,\n      delivered_count:  totals.delivered,\n      read_count:       totals.read,\n      failed_count:     totals.failed,\n      created_at:       new Date().toISOString()\n    }\n  };\n});"
       },
       "name": "Transform - WhatsApp Metrics",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [850, 300]
+      "position": [1100, 200]
     },
     {
       "parameters": {
-        "operation": "insert",
-        "schema": "public",
-        "table": "post_metrics",
-        "columns": "channel_id,metric_date,reach,impressions,engagements,clicks,likes,comments,shares,saves,video_views,watch_time_seconds,profile_visits,follower_count,created_at",
-        "fieldsUi": {
-          "values": [
-            { "fieldName": "channel_id", "fieldValue": "={{ $json.channel_id }}" },
-            { "fieldName": "metric_date", "fieldValue": "={{ $json.metric_date }}" },
-            { "fieldName": "reach", "fieldValue": "={{ $json.reach }}" },
-            { "fieldName": "impressions", "fieldValue": "={{ $json.impressions }}" },
-            { "fieldName": "engagements", "fieldValue": "={{ $json.engagements }}" },
-            { "fieldName": "clicks", "fieldValue": "={{ $json.clicks }}" },
-            { "fieldName": "likes", "fieldValue": "={{ $json.likes }}" },
-            { "fieldName": "comments", "fieldValue": "={{ $json.comments }}" },
-            { "fieldName": "shares", "fieldValue": "={{ $json.shares }}" },
-            { "fieldName": "saves", "fieldValue": "={{ $json.saves }}" },
-            { "fieldName": "video_views", "fieldValue": "={{ $json.video_views }}" },
-            { "fieldName": "watch_time_seconds", "fieldValue": "={{ $json.watch_time_seconds }}" },
-            { "fieldName": "profile_visits", "fieldValue": "={{ $json.profile_visits }}" },
-            { "fieldName": "follower_count", "fieldValue": "={{ $json.follower_count }}" },
-            { "fieldName": "created_at", "fieldValue": "={{ $json.created_at }}" }
-          ]
-        }
+        "operation": "executeQuery",
+        "query": "INSERT INTO post_metrics (\n  channel_id, platform, metric_date,\n  reach, impressions, engagements, clicks,\n  likes, comments, shares, saves,\n  video_views, watch_time_seconds, profile_visits, follower_count,\n  sent_count, delivered_count, read_count, failed_count,\n  created_at\n) VALUES (\n  '{{ $json.channel_id }}', '{{ $json.platform }}', '{{ $json.metric_date }}',\n  {{ $json.reach }}, {{ $json.impressions }}, {{ $json.engagements }}, {{ $json.clicks }},\n  {{ $json.likes }}, {{ $json.comments }}, {{ $json.shares }}, {{ $json.saves }},\n  {{ $json.video_views }}, {{ $json.watch_time_seconds }}, {{ $json.profile_visits }}, {{ $json.follower_count }},\n  {{ $json.sent_count }}, {{ $json.delivered_count }}, {{ $json.read_count }}, {{ $json.failed_count }},\n  '{{ $json.created_at }}'\n)\nON CONFLICT (channel_id, metric_date)\nDO UPDATE SET\n  reach            = EXCLUDED.reach,\n  impressions      = EXCLUDED.impressions,\n  engagements      = EXCLUDED.engagements,\n  sent_count       = EXCLUDED.sent_count,\n  delivered_count  = EXCLUDED.delivered_count,\n  read_count       = EXCLUDED.read_count,\n  failed_count     = EXCLUDED.failed_count,\n  created_at       = EXCLUDED.created_at;"
       },
-      "name": "DB - Insert Metrics",
+      "name": "DB - Upsert Metrics",
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 1,
-      "position": [1050, 300],
+      "position": [1300, 200],
       "credentials": {
         "postgres": {"id": "jtNPm35xuYntlcNR", "name": "PostgreSQL - Marketing Hub"}
       }
     },
     {
       "parameters": {
-        "operation": "insert",
-        "schema": "public",
-        "table": "action_log",
-        "columns": "action_type,resource_type,actor,actor_type,status,details,created_at",
-        "fieldsUi": {
-          "values": [
-            { "fieldName": "action_type", "fieldValue": "workflow_execution" },
-            { "fieldName": "resource_type", "fieldValue": "ingestion" },
-            { "fieldName": "actor", "fieldValue": "n8n" },
-            { "fieldName": "actor_type", "fieldValue": "system" },
-            { "fieldName": "status", "fieldValue": "success" },
-            { "fieldName": "details", "fieldValue": "={{ JSON.stringify({ workflow: 'ingest-whatsapp-nightly', metrics_count: $input.all().length }) }}" },
-            { "fieldName": "created_at", "fieldValue": "=now()" }
-          ]
-        }
+        "operation": "executeQuery",
+        "query": "INSERT INTO action_log (action_type, resource_type, actor, actor_type, status, details, created_at)\nVALUES ('workflow_execution', 'ingestion', 'n8n', 'system', 'success',\n  '{{ JSON.stringify({ workflow: \"ingest-whatsapp-nightly\", metrics_count: $input.all().length }) }}',\n  now());"
       },
       "name": "DB - Log Success",
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 1,
-      "position": [1250, 300],
+      "position": [1500, 200],
+      "credentials": {
+        "postgres": {"id": "jtNPm35xuYntlcNR", "name": "PostgreSQL - Marketing Hub"}
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO action_log (action_type, resource_type, actor, actor_type, status, details, created_at)\nVALUES ('workflow_execution', 'ingestion', 'n8n', 'system', 'failure',\n  '{{ JSON.stringify({ workflow: \"ingest-whatsapp-nightly\", error: $json.error }) }}',\n  now());"
+      },
+      "name": "DB - Log Failure",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 1,
+      "position": [1100, 450],
       "credentials": {
         "postgres": {"id": "jtNPm35xuYntlcNR", "name": "PostgreSQL - Marketing Hub"}
       }
     }
   ],
   "connections": {
-    "Trigger - Daily 2:40 AM UTC": { "main": [[{ "node": "Query - Connected WhatsApp", "type": "main", "index": 0 }]] },
-    "Query - Connected WhatsApp": { "main": [[{ "node": "API - WhatsApp Messages", "type": "main", "index": 0 }]] },
-    "API - WhatsApp Messages": { "main": [[{ "node": "Transform - WhatsApp Metrics", "type": "main", "index": 0 }]] },
-    "Transform - WhatsApp Metrics": { "main": [[{ "node": "DB - Insert Metrics", "type": "main", "index": 0 }]] },
-    "DB - Insert Metrics": { "main": [[{ "node": "DB - Log Success", "type": "main", "index": 0 }]] }
+    "Trigger - Daily 2:40 AM UTC": {
+      "main": [[{ "node": "Query - Connected WhatsApp", "type": "main", "index": 0 }]]
+    },
+    "Query - Connected WhatsApp": {
+      "main": [[{ "node": "Init - Channel State", "type": "main", "index": 0 }]]
+    },
+    "Init - Channel State": {
+      "main": [[{ "node": "API - WhatsApp Analytics", "type": "main", "index": 0 }]]
+    },
+    "API - WhatsApp Analytics": {
+      "main": [[{ "node": "IF - API Success", "type": "main", "index": 0 }]]
+    },
+    "IF - API Success": {
+      "main": [
+        [{ "node": "Transform - WhatsApp Metrics", "type": "main", "index": 0 }],
+        [{ "node": "DB - Log Failure", "type": "main", "index": 0 }]
+      ]
+    },
+    "Transform - WhatsApp Metrics": {
+      "main": [[{ "node": "DB - Upsert Metrics", "type": "main", "index": 0 }]]
+    },
+    "DB - Upsert Metrics": {
+      "main": [[{ "node": "DB - Log Success", "type": "main", "index": 0 }]]
+    }
   },
   "active": false,
   "settings": {}

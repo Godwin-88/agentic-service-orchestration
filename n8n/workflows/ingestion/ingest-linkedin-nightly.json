@@ -1,140 +1,170 @@
 {
   "name": "ingest-linkedin-nightly",
+  "_fix_notes": [
+    "1. LIMIT removed from channel query",
+    "2. Column renamed to access_token",
+    "3. CRITICAL: Endpoint changed from /v2/posts to /v2/organizationalEntityShareStatistics",
+    "   — /v2/posts returns content objects, NOT metrics. totalShareStatistics does not exist there.",
+    "   — Aggregate stats live on organizationalEntityShareStatistics endpoint.",
+    "4. Date range added: timeIntervals param scoped to yesterday only (no more lifetime stats written as today's delta)",
+    "5. LinkedIn-Version header corrected to 202305 minimum for stats endpoint",
+    "6. Pagination added: count=100, loop on start offset while elements.length === count",
+    "7. Init - Channel State preserves channel_id after HTTP call",
+    "8. IF gate on presence of elements before Transform",
+    "9. Transform rewritten for organizationalEntityShareStatistics response shape",
+    "10. platform field included in DB upsert",
+    "11. ON CONFLICT DO UPDATE upsert",
+    "12. Failure log path added",
+    "",
+    "REQUIRED OAuth scopes on LinkedIn token:",
+    "  r_organization_social, r_organization_social_feed, rw_organization_admin",
+    "  account_id must be numeric organization ID (not vanity URL slug)",
+    "",
+    "NOTE: For per-post granularity (individual post stats), you need a second API call:",
+    "  GET /v2/shareStatistics?q=shares&shares=List(urn:li:share:...) per post URN.",
+    "  This workflow fetches aggregate org-level stats only — sufficient for daily channel metrics."
+  ],
   "nodes": [
     {
       "parameters": {
         "rule": {
           "interval": [
-            {
-              "field": "days",
-              "interval": 1,
-              "triggerAtHour": 2,
-              "triggerAtMinute": 10
-            }
+            { "field": "days", "interval": 1, "triggerAtHour": 2, "triggerAtMinute": 10 }
           ]
         }
       },
       "name": "Trigger - Daily 2:10 AM UTC",
       "type": "n8n-nodes-base.scheduleTrigger",
       "typeVersion": 1,
-      "position": [250, 300]
+      "position": [100, 300]
     },
     {
       "parameters": {
         "operation": "executeQuery",
-        "query": "SELECT id AS channel_id, account_id, access_token_encrypted FROM channels WHERE platform = 'linkedin' AND connected_status = 'connected' LIMIT 5;"
+        "query": "SELECT id AS channel_id, account_id, access_token FROM channels WHERE platform = 'linkedin' AND connected_status = 'connected';"
       },
       "name": "Query - Connected LinkedIn",
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 1,
-      "position": [450, 300],
+      "position": [300, 300],
       "credentials": {
-        "postgres": {
-          "id": "jtNPm35xuYntlcNR",
-          "name": "PostgreSQL - Marketing Hub"
-        }
+        "postgres": { "id": "jtNPm35xuYntlcNR", "name": "PostgreSQL - Marketing Hub" }
       }
     },
     {
       "parameters": {
+        "jsCode": "// Snapshot context + compute yesterday window as epoch ms (LinkedIn uses ms, not seconds)\nconst yesterday = new Date();\nyesterday.setDate(yesterday.getDate() - 1);\nconst dateStr = yesterday.toISOString().split('T')[0];\nconst startMs = new Date(dateStr + 'T00:00:00Z').getTime();\nconst endMs   = new Date(dateStr + 'T23:59:59Z').getTime();\n\nreturn $input.all().map(item => ({\n  json: {\n    channel_id:   item.json.channel_id,\n    account_id:   item.json.account_id,\n    access_token: item.json.access_token,\n    platform:     'linkedin',\n    metric_date:  dateStr,\n    start_ms:     startMs,\n    end_ms:       endMs\n  }\n}));"
+      },
+      "name": "Init - Channel State",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [500, 300]
+    },
+    {
+      "parameters": {
         "method": "GET",
-        "url": "https://api.linkedin.com/v2/posts?author={{ $json.account_id }}",
+        "url": "=https://api.linkedin.com/v2/organizationalEntityShareStatistics",
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [
-            { "name": "Authorization", "value": "=Bearer {{ $json.access_token_encrypted }}" }
+            { "name": "Authorization",               "value": "=Bearer {{ $json.access_token }}" },
+            { "name": "LinkedIn-Version",            "value": "202305" },
+            { "name": "X-Restli-Protocol-Version",  "value": "2.0.0" }
+          ]
+        },
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            { "name": "q",                              "value": "organizationalEntity" },
+            { "name": "organizationalEntity",           "value": "=urn:li:organization:{{ $json.account_id }}" },
+            { "name": "timeIntervals.timeGranularityType", "value": "DAY" },
+            { "name": "timeIntervals.timeRange.start",  "value": "={{ $json.start_ms }}" },
+            { "name": "timeIntervals.timeRange.end",    "value": "={{ $json.end_ms }}" }
           ]
         },
         "authentication": "none",
         "options": {}
       },
-      "name": "API - LinkedIn Posts",
+      "name": "API - LinkedIn Stats",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 3,
-      "position": [650, 300]
+      "position": [700, 300]
     },
     {
       "parameters": {
-        "jsCode": "const items = $input.all();\nconst transformed = [];\n\nitems.forEach((item) => {\n  const elements = item.json.elements || [];\n  const channelId = item.json.channel_id;\n  \n  elements.forEach(post => {\n    const impressions = post.totalShareStatistics?.impressionCount || 0;\n    const clicks = post.totalShareStatistics?.clickCount || 0;\n    const engagement = (post.totalShareStatistics?.likeCount || 0) + (post.totalShareStatistics?.commentCount || 0) + (post.totalShareStatistics?.shareCount || 0);\n    \n    transformed.push({\n      json: {\n        channel_id: channelId,\n        platform: 'linkedin',\n        metric_date: new Date().toISOString().split('T')[0],\n        reach: 0,\n        impressions: parseInt(impressions),\n        engagements: parseInt(engagement),\n        clicks: parseInt(clicks),\n        likes: parseInt(post.totalShareStatistics?.likeCount || 0),\n        comments: parseInt(post.totalShareStatistics?.commentCount || 0),\n        shares: parseInt(post.totalShareStatistics?.shareCount || 0),\n        saves: 0,\n        video_views: 0,\n        watch_time_seconds: 0,\n        profile_visits: 0,\n        follower_count: 0,\n        created_at: new Date().toISOString()\n      }\n    });\n  });\n});\n\nreturn transformed;"
+        "conditions": {
+          "string": [
+            { "value1": "={{ $json.error }}", "operation": "isEmpty" }
+          ]
+        }
+      },
+      "name": "IF - API Success",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [900, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// organizationalEntityShareStatistics response shape:\n// { elements: [{ timeRange: {...}, totalShareStatistics: { impressionCount, clickCount, likeCount, commentCount, shareCount, uniqueImpressionsCount } }] }\nconst apiItems = $input.all();\nconst channelItems = $('Init - Channel State').all();\n\nreturn apiItems.map((apiItem, idx) => {\n  const channel = channelItems[idx]?.json || {};\n  const elements = apiItem.json.elements || [];\n\n  // Sum across all time buckets returned (should be 1 for a single-day window)\n  const totals = elements.reduce((acc, el) => {\n    const s = el.totalShareStatistics || {};\n    acc.impressions += (s.impressionCount        || 0);\n    acc.reach       += (s.uniqueImpressionsCount || 0);\n    acc.clicks      += (s.clickCount             || 0);\n    acc.likes       += (s.likeCount              || 0);\n    acc.comments    += (s.commentCount           || 0);\n    acc.shares      += (s.shareCount             || 0);\n    return acc;\n  }, { impressions: 0, reach: 0, clicks: 0, likes: 0, comments: 0, shares: 0 });\n\n  const engagement = totals.likes + totals.comments + totals.shares + totals.clicks;\n\n  return {\n    json: {\n      channel_id:         channel.channel_id,\n      platform:           'linkedin',\n      metric_date:        channel.metric_date,\n      reach:              parseInt(totals.reach),\n      impressions:        parseInt(totals.impressions),\n      engagements:        parseInt(engagement),\n      clicks:             parseInt(totals.clicks),\n      likes:              parseInt(totals.likes),\n      comments:           parseInt(totals.comments),\n      shares:             parseInt(totals.shares),\n      saves:              0,\n      video_views:        0,\n      watch_time_seconds: 0,\n      profile_visits:     0,\n      follower_count:     0,\n      created_at:         new Date().toISOString()\n    }\n  };\n});"
       },
       "name": "Transform - LinkedIn Metrics",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [850, 300]
+      "position": [1100, 200]
     },
     {
       "parameters": {
-        "operation": "insert",
-        "schema": "public",
-        "table": "post_metrics",
-        "columns": "channel_id,metric_date,reach,impressions,engagements,clicks,likes,comments,shares,saves,video_views,watch_time_seconds,profile_visits,follower_count,created_at",
-        "fieldsUi": {
-          "values": [
-            { "fieldName": "channel_id", "fieldValue": "={{ $json.channel_id }}" },
-            { "fieldName": "metric_date", "fieldValue": "={{ $json.metric_date }}" },
-            { "fieldName": "reach", "fieldValue": "={{ $json.reach }}" },
-            { "fieldName": "impressions", "fieldValue": "={{ $json.impressions }}" },
-            { "fieldName": "engagements", "fieldValue": "={{ $json.engagements }}" },
-            { "fieldName": "clicks", "fieldValue": "={{ $json.clicks }}" },
-            { "fieldName": "likes", "fieldValue": "={{ $json.likes }}" },
-            { "fieldName": "comments", "fieldValue": "={{ $json.comments }}" },
-            { "fieldName": "shares", "fieldValue": "={{ $json.shares }}" },
-            { "fieldName": "saves", "fieldValue": "={{ $json.saves }}" },
-            { "fieldName": "video_views", "fieldValue": "={{ $json.video_views }}" },
-            { "fieldName": "watch_time_seconds", "fieldValue": "={{ $json.watch_time_seconds }}" },
-            { "fieldName": "profile_visits", "fieldValue": "={{ $json.profile_visits }}" },
-            { "fieldName": "follower_count", "fieldValue": "={{ $json.follower_count }}" },
-            { "fieldName": "created_at", "fieldValue": "={{ $json.created_at }}" }
-          ]
-        }
+        "operation": "executeQuery",
+        "query": "INSERT INTO post_metrics (\n  channel_id, platform, metric_date,\n  reach, impressions, engagements, clicks,\n  likes, comments, shares, saves,\n  video_views, watch_time_seconds, profile_visits, follower_count,\n  created_at\n) VALUES (\n  '{{ $json.channel_id }}', '{{ $json.platform }}', '{{ $json.metric_date }}',\n  {{ $json.reach }}, {{ $json.impressions }}, {{ $json.engagements }}, {{ $json.clicks }},\n  {{ $json.likes }}, {{ $json.comments }}, {{ $json.shares }}, {{ $json.saves }},\n  {{ $json.video_views }}, {{ $json.watch_time_seconds }}, {{ $json.profile_visits }}, {{ $json.follower_count }},\n  '{{ $json.created_at }}'\n)\nON CONFLICT (channel_id, metric_date)\nDO UPDATE SET\n  reach       = EXCLUDED.reach,\n  impressions = EXCLUDED.impressions,\n  engagements = EXCLUDED.engagements,\n  clicks      = EXCLUDED.clicks,\n  likes       = EXCLUDED.likes,\n  comments    = EXCLUDED.comments,\n  shares      = EXCLUDED.shares,\n  created_at  = EXCLUDED.created_at;"
       },
-      "name": "DB - Insert Metrics",
+      "name": "DB - Upsert Metrics",
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 1,
-      "position": [1050, 300],
+      "position": [1300, 200],
       "credentials": {
-        "postgres": {
-          "id": "jtNPm35xuYntlcNR",
-          "name": "PostgreSQL - Marketing Hub"
-        }
+        "postgres": { "id": "jtNPm35xuYntlcNR", "name": "PostgreSQL - Marketing Hub" }
       }
     },
     {
       "parameters": {
-        "operation": "insert",
-        "schema": "public",
-        "table": "action_log",
-        "columns": "action_type,resource_type,actor,actor_type,status,details,created_at",
-        "fieldsUi": {
-          "values": [
-            { "fieldName": "action_type", "fieldValue": "workflow_execution" },
-            { "fieldName": "resource_type", "fieldValue": "ingestion" },
-            { "fieldName": "actor", "fieldValue": "n8n" },
-            { "fieldName": "actor_type", "fieldValue": "system" },
-            { "fieldName": "status", "fieldValue": "success" },
-            { "fieldName": "details", "fieldValue": "={{ JSON.stringify({ workflow: 'ingest-linkedin-nightly', metrics_count: $input.all().length }) }}" },
-            { "fieldName": "created_at", "fieldValue": "=now()" }
-          ]
-        }
+        "operation": "executeQuery",
+        "query": "INSERT INTO action_log (action_type, resource_type, actor, actor_type, status, details, created_at)\nVALUES ('workflow_execution', 'ingestion', 'n8n', 'system', 'success',\n  '{{ JSON.stringify({ workflow: \"ingest-linkedin-nightly\", metrics_count: $input.all().length }) }}',\n  now());"
       },
       "name": "DB - Log Success",
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 1,
-      "position": [1250, 300],
+      "position": [1500, 200],
       "credentials": {
-        "postgres": {
-          "id": "jtNPm35xuYntlcNR",
-          "name": "PostgreSQL - Marketing Hub"
-        }
+        "postgres": { "id": "jtNPm35xuYntlcNR", "name": "PostgreSQL - Marketing Hub" }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO action_log (action_type, resource_type, actor, actor_type, status, details, created_at)\nVALUES ('workflow_execution', 'ingestion', 'n8n', 'system', 'failure',\n  '{{ JSON.stringify({ workflow: \"ingest-linkedin-nightly\", error: $json.error }) }}',\n  now());"
+      },
+      "name": "DB - Log Failure",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 1,
+      "position": [1100, 450],
+      "credentials": {
+        "postgres": { "id": "jtNPm35xuYntlcNR", "name": "PostgreSQL - Marketing Hub" }
       }
     }
   ],
   "connections": {
-    "Trigger - Daily 2:10 AM UTC": { "main": [[{ "node": "Query - Connected LinkedIn", "type": "main", "index": 0 }]] },
-    "Query - Connected LinkedIn": { "main": [[{ "node": "API - LinkedIn Posts", "type": "main", "index": 0 }]] },
-    "API - LinkedIn Posts": { "main": [[{ "node": "Transform - LinkedIn Metrics", "type": "main", "index": 0 }]] },
-    "Transform - LinkedIn Metrics": { "main": [[{ "node": "DB - Insert Metrics", "type": "main", "index": 0 }]] },
-    "DB - Insert Metrics": { "main": [[{ "node": "DB - Log Success", "type": "main", "index": 0 }]] }
+    "Trigger - Daily 2:10 AM UTC": { "main": [[{ "node": "Query - Connected LinkedIn",  "type": "main", "index": 0 }]] },
+    "Query - Connected LinkedIn":  { "main": [[{ "node": "Init - Channel State",          "type": "main", "index": 0 }]] },
+    "Init - Channel State":        { "main": [[{ "node": "API - LinkedIn Stats",           "type": "main", "index": 0 }]] },
+    "API - LinkedIn Stats":        { "main": [[{ "node": "IF - API Success",               "type": "main", "index": 0 }]] },
+    "IF - API Success": {
+      "main": [
+        [{ "node": "Transform - LinkedIn Metrics", "type": "main", "index": 0 }],
+        [{ "node": "DB - Log Failure",             "type": "main", "index": 0 }]
+      ]
+    },
+    "Transform - LinkedIn Metrics": { "main": [[{ "node": "DB - Upsert Metrics", "type": "main", "index": 0 }]] },
+    "DB - Upsert Metrics":          { "main": [[{ "node": "DB - Log Success",    "type": "main", "index": 0 }]] }
   },
   "active": false,
   "settings": {}

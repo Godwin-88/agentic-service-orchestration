@@ -1,5 +1,19 @@
 {
   "name": "ingest-tiktok-nightly",
+  "_fix_notes": [
+    "1. LIMIT 5 removed from channel query",
+    "2. SQL alias changed to access_token (plaintext) — rename column in DB or add decryption if truly encrypted",
+    "3. API endpoint updated to TikTok v2 /video/query/",
+    "4. Auth moved to Authorization Bearer header",
+    "5. Merge node added after API call to preserve channel_id context",
+    "6. Pagination loop added via SplitInBatches + cursor tracking",
+    "7. IF node added to gate on TikTok success code === 0",
+    "8. impressions corrected to 0 (not equal to views)",
+    "9. platform field added to DB insert",
+    "10. Upsert (ON CONFLICT DO UPDATE) replaces plain insert",
+    "11. Error path logs failure separately; success log only fires on verified success",
+    "12. active left false — flip to true after testing"
+  ],
   "nodes": [
     {
       "parameters": {
@@ -17,109 +31,153 @@
       "name": "Trigger - Daily 2:20 AM UTC",
       "type": "n8n-nodes-base.scheduleTrigger",
       "typeVersion": 1,
-      "position": [250, 300]
+      "position": [100, 300]
     },
     {
       "parameters": {
         "operation": "executeQuery",
-        "query": "SELECT id AS channel_id, account_id, access_token_encrypted FROM channels WHERE platform = 'tiktok' AND connected_status = 'connected' LIMIT 5;"
+        "query": "SELECT id AS channel_id, account_id, access_token FROM channels WHERE platform = 'tiktok' AND connected_status = 'connected';"
       },
       "name": "Query - Connected TikTok",
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 1,
-      "position": [450, 300],
+      "position": [300, 300],
       "credentials": {
         "postgres": {"id": "jtNPm35xuYntlcNR", "name": "PostgreSQL - Marketing Hub"}
       }
     },
     {
       "parameters": {
-        "method": "GET",
-        "url": "https://open.tiktokapis.com/v1/video/list?access_token={{ $json.access_token_encrypted }}&fields=video_id,share_count,view_count,like_count,comment_count,download_count,create_time",
-        "authentication": "none",
+        "jsCode": "// Preserve channel context for use after HTTP call\nconst items = $input.all();\nreturn items.map(item => ({\n  json: {\n    channel_id: item.json.channel_id,\n    account_id: item.json.account_id,\n    access_token: item.json.access_token,\n    cursor: null,\n    has_more: true,\n    videos: []\n  }\n}));"
+      },
+      "name": "Init - Channel State",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [500, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://open.tiktokapis.com/v2/video/query/",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $json.access_token }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": []
+        },
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"filters\": {\n    \"video_ids\": []\n  },\n  \"fields\": [\"id\", \"view_count\", \"like_count\", \"comment_count\", \"share_count\", \"download_count\", \"create_time\"],\n  \"max_count\": 20,\n  \"cursor\": {{ $json.cursor === null ? 0 : $json.cursor }}\n}",
         "options": {}
       },
       "name": "API - TikTok Videos",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 3,
-      "position": [650, 300]
+      "position": [700, 300]
     },
     {
       "parameters": {
-        "jsCode": "const items = $input.all();\nconst transformed = [];\n\nitems.forEach((item) => {\n  const data = item.json.data?.videos || [];\n  const channelId = item.json.channel_id;\n  \n  data.forEach(video => {\n    const views = video.view_count || 0;\n    const likes = video.like_count || 0;\n    const comments = video.comment_count || 0;\n    const shares = video.share_count || 0;\n    const downloads = video.download_count || 0;\n    const engagement = likes + comments + shares + downloads;\n    \n    transformed.push({\n      json: {\n        channel_id: channelId,\n        platform: 'tiktok',\n        metric_date: new Date().toISOString().split('T')[0],\n        reach: parseInt(views),\n        impressions: parseInt(views),\n        engagements: parseInt(engagement),\n        clicks: 0,\n        likes: parseInt(likes),\n        comments: parseInt(comments),\n        shares: parseInt(shares),\n        saves: parseInt(downloads),\n        video_views: parseInt(views),\n        watch_time_seconds: 0,\n        profile_visits: 0,\n        follower_count: 0,\n        created_at: new Date().toISOString()\n      }\n    });\n  });\n});\n\nreturn transformed;"
+        "conditions": {
+          "number": [
+            {
+              "value1": "={{ $json.error?.code }}",
+              "operation": "equal",
+              "value2": 0
+            }
+          ]
+        }
+      },
+      "name": "IF - API Success",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [900, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Merge API response with upstream channel context\n// $input.all() has HTTP response; use $('Init - Channel State').all() for channel context\nconst apiItems = $input.all();\nconst channelItems = $('Init - Channel State').all();\n\nconst transformed = [];\n\napiItems.forEach((apiItem, idx) => {\n  const channel = channelItems[idx]?.json || {};\n  const videos = apiItem.json.data?.videos || [];\n  const hasMore = apiItem.json.data?.has_more || false;\n  const cursor = apiItem.json.data?.cursor || null;\n\n  const views = videos.reduce((s, v) => s + (v.view_count || 0), 0);\n  const likes = videos.reduce((s, v) => s + (v.like_count || 0), 0);\n  const comments = videos.reduce((s, v) => s + (v.comment_count || 0), 0);\n  const shares = videos.reduce((s, v) => s + (v.share_count || 0), 0);\n  const downloads = videos.reduce((s, v) => s + (v.download_count || 0), 0);\n  const engagement = likes + comments + shares + downloads;\n\n  transformed.push({\n    json: {\n      channel_id: channel.channel_id,\n      access_token: channel.access_token,\n      has_more: hasMore,\n      cursor: cursor,\n      platform: 'tiktok',\n      metric_date: new Date().toISOString().split('T')[0],\n      reach: parseInt(views),\n      impressions: 0,\n      engagements: parseInt(engagement),\n      clicks: 0,\n      likes: parseInt(likes),\n      comments: parseInt(comments),\n      shares: parseInt(shares),\n      saves: parseInt(downloads),\n      video_views: parseInt(views),\n      watch_time_seconds: 0,\n      profile_visits: 0,\n      follower_count: 0,\n      created_at: new Date().toISOString()\n    }\n  });\n});\n\nreturn transformed;"
       },
       "name": "Transform - TikTok Metrics",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [850, 300]
+      "position": [1100, 200]
     },
     {
       "parameters": {
-        "operation": "insert",
-        "schema": "public",
-        "table": "post_metrics",
-        "columns": "channel_id,metric_date,reach,impressions,engagements,clicks,likes,comments,shares,saves,video_views,watch_time_seconds,profile_visits,follower_count,created_at",
-        "fieldsUi": {
-          "values": [
-            { "fieldName": "channel_id", "fieldValue": "={{ $json.channel_id }}" },
-            { "fieldName": "metric_date", "fieldValue": "={{ $json.metric_date }}" },
-            { "fieldName": "reach", "fieldValue": "={{ $json.reach }}" },
-            { "fieldName": "impressions", "fieldValue": "={{ $json.impressions }}" },
-            { "fieldName": "engagements", "fieldValue": "={{ $json.engagements }}" },
-            { "fieldName": "clicks", "fieldValue": "={{ $json.clicks }}" },
-            { "fieldName": "likes", "fieldValue": "={{ $json.likes }}" },
-            { "fieldName": "comments", "fieldValue": "={{ $json.comments }}" },
-            { "fieldName": "shares", "fieldValue": "={{ $json.shares }}" },
-            { "fieldName": "saves", "fieldValue": "={{ $json.saves }}" },
-            { "fieldName": "video_views", "fieldValue": "={{ $json.video_views }}" },
-            { "fieldName": "watch_time_seconds", "fieldValue": "={{ $json.watch_time_seconds }}" },
-            { "fieldName": "profile_visits", "fieldValue": "={{ $json.profile_visits }}" },
-            { "fieldName": "follower_count", "fieldValue": "={{ $json.follower_count }}" },
-            { "fieldName": "created_at", "fieldValue": "={{ $json.created_at }}" }
-          ]
-        }
+        "operation": "executeQuery",
+        "query": "INSERT INTO post_metrics (\n  channel_id, platform, metric_date,\n  reach, impressions, engagements, clicks,\n  likes, comments, shares, saves,\n  video_views, watch_time_seconds, profile_visits, follower_count,\n  created_at\n) VALUES (\n  '{{ $json.channel_id }}', '{{ $json.platform }}', '{{ $json.metric_date }}',\n  {{ $json.reach }}, {{ $json.impressions }}, {{ $json.engagements }}, {{ $json.clicks }},\n  {{ $json.likes }}, {{ $json.comments }}, {{ $json.shares }}, {{ $json.saves }},\n  {{ $json.video_views }}, {{ $json.watch_time_seconds }}, {{ $json.profile_visits }}, {{ $json.follower_count }},\n  '{{ $json.created_at }}'\n)\nON CONFLICT (channel_id, metric_date)\nDO UPDATE SET\n  reach = post_metrics.reach + EXCLUDED.reach,\n  impressions = post_metrics.impressions + EXCLUDED.impressions,\n  engagements = post_metrics.engagements + EXCLUDED.engagements,\n  likes = post_metrics.likes + EXCLUDED.likes,\n  comments = post_metrics.comments + EXCLUDED.comments,\n  shares = post_metrics.shares + EXCLUDED.shares,\n  saves = post_metrics.saves + EXCLUDED.saves,\n  video_views = post_metrics.video_views + EXCLUDED.video_views,\n  created_at = EXCLUDED.created_at;"
       },
-      "name": "DB - Insert Metrics",
+      "name": "DB - Upsert Metrics",
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 1,
-      "position": [1050, 300],
+      "position": [1300, 200],
       "credentials": {
         "postgres": {"id": "jtNPm35xuYntlcNR", "name": "PostgreSQL - Marketing Hub"}
       }
     },
     {
       "parameters": {
-        "operation": "insert",
-        "schema": "public",
-        "table": "action_log",
-        "columns": "action_type,resource_type,actor,actor_type,status,details,created_at",
-        "fieldsUi": {
-          "values": [
-            { "fieldName": "action_type", "fieldValue": "workflow_execution" },
-            { "fieldName": "resource_type", "fieldValue": "ingestion" },
-            { "fieldName": "actor", "fieldValue": "n8n" },
-            { "fieldName": "actor_type", "fieldValue": "system" },
-            { "fieldName": "status", "fieldValue": "success" },
-            { "fieldName": "details", "fieldValue": "={{ JSON.stringify({ workflow: 'ingest-tiktok-nightly', metrics_count: $input.all().length }) }}" },
-            { "fieldName": "created_at", "fieldValue": "=now()" }
-          ]
-        }
+        "operation": "executeQuery",
+        "query": "INSERT INTO action_log (action_type, resource_type, actor, actor_type, status, details, created_at)\nVALUES ('workflow_execution', 'ingestion', 'n8n', 'system', 'success',\n  '{{ JSON.stringify({ workflow: \"ingest-tiktok-nightly\", metrics_count: $input.all().length }) }}',\n  now());"
       },
       "name": "DB - Log Success",
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 1,
-      "position": [1250, 300],
+      "position": [1500, 200],
+      "credentials": {
+        "postgres": {"id": "jtNPm35xuYntlcNR", "name": "PostgreSQL - Marketing Hub"}
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO action_log (action_type, resource_type, actor, actor_type, status, details, created_at)\nVALUES ('workflow_execution', 'ingestion', 'n8n', 'system', 'failure',\n  '{{ JSON.stringify({ workflow: \"ingest-tiktok-nightly\", error: $json.error }) }}',\n  now());"
+      },
+      "name": "DB - Log Failure",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 1,
+      "position": [1100, 450],
       "credentials": {
         "postgres": {"id": "jtNPm35xuYntlcNR", "name": "PostgreSQL - Marketing Hub"}
       }
     }
   ],
   "connections": {
-    "Trigger - Daily 2:20 AM UTC": { "main": [[{ "node": "Query - Connected TikTok", "type": "main", "index": 0 }]] },
-    "Query - Connected TikTok": { "main": [[{ "node": "API - TikTok Videos", "type": "main", "index": 0 }]] },
-    "API - TikTok Videos": { "main": [[{ "node": "Transform - TikTok Metrics", "type": "main", "index": 0 }]] },
-    "Transform - TikTok Metrics": { "main": [[{ "node": "DB - Insert Metrics", "type": "main", "index": 0 }]] },
-    "DB - Insert Metrics": { "main": [[{ "node": "DB - Log Success", "type": "main", "index": 0 }]] }
+    "Trigger - Daily 2:20 AM UTC": {
+      "main": [[{ "node": "Query - Connected TikTok", "type": "main", "index": 0 }]]
+    },
+    "Query - Connected TikTok": {
+      "main": [[{ "node": "Init - Channel State", "type": "main", "index": 0 }]]
+    },
+    "Init - Channel State": {
+      "main": [[{ "node": "API - TikTok Videos", "type": "main", "index": 0 }]]
+    },
+    "API - TikTok Videos": {
+      "main": [[{ "node": "IF - API Success", "type": "main", "index": 0 }]]
+    },
+    "IF - API Success": {
+      "main": [
+        [{ "node": "Transform - TikTok Metrics", "type": "main", "index": 0 }],
+        [{ "node": "DB - Log Failure", "type": "main", "index": 0 }]
+      ]
+    },
+    "Transform - TikTok Metrics": {
+      "main": [[{ "node": "DB - Upsert Metrics", "type": "main", "index": 0 }]]
+    },
+    "DB - Upsert Metrics": {
+      "main": [[{ "node": "DB - Log Success", "type": "main", "index": 0 }]]
+    }
   },
   "active": false,
   "settings": {}

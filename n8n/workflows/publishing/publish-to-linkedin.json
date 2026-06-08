@@ -20,11 +20,11 @@
     {
       "parameters": {
         "operation": "executeQuery",
-        "query": "SELECT p.id, p.content_text, p.media_urls, p.format_metadata, c.platform, c.access_token_encrypted, c.account_id FROM posts p JOIN channels c ON p.channel_id = c.id WHERE p.status = 'scheduled' AND p.scheduled_at <= NOW() AND c.platform = 'linkedin';"
+        "query": "SELECT p.id, p.content_text, p.media_urls, p.format_metadata, c.platform, c.access_token, c.account_id, c.account_type FROM posts p JOIN channels c ON p.channel_id = c.id WHERE p.status = 'scheduled' AND p.scheduled_at <= NOW() AND c.platform = 'linkedin' ORDER BY p.scheduled_at ASC LIMIT 50;"
       },
       "name": "Query - Scheduled LinkedIn Posts",
       "type": "n8n-nodes-base.postgres",
-      "typeVersion": 1,
+      "typeVersion": 2,
       "position": [450, 300],
       "credentials": {
         "postgres": "PostgreSQL - Marketing Hub"
@@ -32,104 +32,143 @@
     },
     {
       "parameters": {
+        "conditions": {
+          "conditions": [
+            {
+              "id": "conditions_0",
+              "leftValue": "={{ $input.all().length }}",
+              "rightValue": 0,
+              "operator": {
+                "type": "number",
+                "operation": "gt"
+              }
+            }
+          ],
+          "combinator": "and"
+        }
+      },
+      "name": "Branch - Posts Exist?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [650, 300]
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "name": "Split - Per Post",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [850, 200]
+    },
+    {
+      "parameters": {
+        "jsCode": "const item = $input.first().json;\n\n// --- Token guard ---\n// access_token must hold a usable (non-encrypted) OAuth 2.0 Bearer token.\n// If your pipeline stores tokens encrypted, add your decryption logic here\n// before this node and surface the result as access_token.\nif (!item.access_token) {\n  throw new Error(\n    `Missing access_token for post id=${item.id}. Ensure the channels table stores a usable token in the access_token column.`\n  );\n}\n\n// --- Author URN ---\n// LinkedIn distinguishes personal profiles (urn:li:person) from org pages (urn:li:organization).\n// The channels table should carry an account_type of 'person' or 'organization'.\n// Defaults to 'organization' — most scheduled publishing is done from org pages.\nconst accountType = (item.account_type || 'organization').toLowerCase().trim();\nconst urnType = accountType === 'person' ? 'person' : 'organization';\nconst authorUrn = `urn:li:${urnType}:${item.account_id}`;\n\n// --- Media ---\nlet mediaUrls = [];\nif (item.media_urls) {\n  try {\n    mediaUrls = typeof item.media_urls === 'string'\n      ? JSON.parse(item.media_urls)\n      : item.media_urls;\n  } catch (e) {\n    mediaUrls = [];\n  }\n}\n\nconst hasMedia = Array.isArray(mediaUrls) && mediaUrls.length > 0;\n\n// --- Build LinkedIn Posts API body ---\n// Uses the current /rest/posts endpoint (UGC Posts was deprecated in 2023).\nconst postBody = {\n  author: authorUrn,\n  lifecycleState: 'PUBLISHED',\n  visibility: 'PUBLIC',\n  distribution: {\n    feedDistribution: 'MAIN_FEED',\n    targetEntities: [],\n    thirdPartyDistributionChannels: []\n  },\n  commentary: item.content_text,\n  content: hasMedia\n    ? {\n        media: {\n          id: mediaUrls[0],\n          title: ''\n        }\n      }\n    : undefined\n};\n\n// Strip undefined keys so the API body stays clean\nif (!postBody.content) delete postBody.content;\n\nreturn {\n  json: {\n    post_id: item.id,\n    access_token: item.access_token,\n    post_body: postBody,\n    has_media: hasMedia\n  }\n};"
+      },
+      "name": "Transform - Prepare Post Payload",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1050, 200]
+    },
+    {
+      "parameters": {
         "method": "POST",
-        "url": "https://api.linkedin.com/v2/ugcPosts",
+        "url": "https://api.linkedin.com/rest/posts",
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [
             {
               "name": "Authorization",
-              "value": "=Bearer {{ $json.access_token_encrypted }}"
+              "value": "=Bearer {{ $json.access_token }}"
+            },
+            {
+              "name": "LinkedIn-Version",
+              "value": "202501"
+            },
+            {
+              "name": "X-Restli-Protocol-Version",
+              "value": "2.0.0"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
             }
           ]
         },
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={\n  \"author\": \"urn:li:person:{{ $json.account_id }}\",\n  \"lifecycleState\": \"PUBLISHED\",\n  \"specificContent\": {\n    \"com.linkedin.ugc.ShareContent\": {\n      \"shareCommentary\": {\n        \"text\": \"{{ $json.content_text }}\"\n      },\n      \"shareMediaCategory\": \"NONE\"\n    }\n  },\n  \"visibility\": {\n    \"com.linkedin.ugc.MemberNetworkVisibility\": \"PUBLIC\"\n  }\n}",
-        "options": {}
+        "jsonBody": "={{ JSON.stringify($json.post_body) }}",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "json",
+              "fullResponse": true
+            }
+          }
+        }
       },
       "name": "API - LinkedIn Publish",
       "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 3,
-      "position": [650, 300]
+      "typeVersion": 4,
+      "position": [1250, 200]
     },
     {
       "parameters": {
-        "operation": "update",
-        "schema": "public",
-        "table": "posts",
-        "whereColumns": "id",
-        "fieldsUi": {
-          "values": [
-            {
-              "fieldName": "status",
-              "fieldValue": "published"
-            },
-            {
-              "fieldName": "published_at",
-              "fieldValue": "={{ new Date().toISOString() }}"
-            },
-            {
-              "fieldName": "external_post_id",
-              "fieldValue": "={{ $node['API - LinkedIn Publish'].json.id }}"
-            }
-          ]
+        "jsCode": "const response = $input.first().json;\n\n// LinkedIn Posts API returns 201 Created on success.\n// The post URN is in the x-restli-id response header (e.g. urn:li:share:123).\n// The body is empty on success; errors come back as a JSON body with a 'message' field.\nconst statusCode = response.statusCode;\nconst headers = response.headers || {};\nconst body = response.body || {};\n\nif (statusCode !== 201) {\n  const errMsg = body.message || body.error || JSON.stringify(body);\n  throw new Error(\n    `LinkedIn API error [HTTP ${statusCode}]: ${errMsg}`\n  );\n}\n\n// Extract the post URN from the response header\nconst externalPostId = headers['x-restli-id'] || headers['x-linkedin-id'] || body.id || null;\n\nif (!externalPostId) {\n  throw new Error(\n    'LinkedIn API returned 201 but no post URN found in x-restli-id header or body.'\n  );\n}\n\nreturn {\n  json: {\n    external_post_id: externalPostId,\n    post_id: $('Transform - Prepare Post Payload').first().json.post_id\n  }\n};"
+      },
+      "name": "Transform - Validate API Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1450, 200]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE posts SET status = 'published', published_at = NOW(), external_post_id = $1 WHERE id = $2;",
+        "additionalFields": {
+          "queryParams": "={{ JSON.stringify([\n  $json.external_post_id,\n  $json.post_id\n]) }}"
         }
       },
       "name": "DB - Update Post Status",
       "type": "n8n-nodes-base.postgres",
-      "typeVersion": 1,
-      "position": [850, 300],
+      "typeVersion": 2,
+      "position": [1650, 200],
       "credentials": {
         "postgres": "PostgreSQL - Marketing Hub"
       }
     },
     {
       "parameters": {
-        "operation": "insert",
-        "schema": "public",
-        "table": "action_log",
-        "columns": "action_type,resource_type,resource_id,actor,actor_type,status,details",
-        "fieldsUi": {
-          "values": [
-            {
-              "fieldName": "action_type",
-              "fieldValue": "post_publishing"
-            },
-            {
-              "fieldName": "resource_type",
-              "fieldValue": "post"
-            },
-            {
-              "fieldName": "resource_id",
-              "fieldValue": "={{ $node['Query - Scheduled LinkedIn Posts'].json.id }}"
-            },
-            {
-              "fieldName": "actor",
-              "fieldValue": "n8n"
-            },
-            {
-              "fieldName": "actor_type",
-              "fieldValue": "system"
-            },
-            {
-              "fieldName": "status",
-              "fieldValue": "success"
-            },
-            {
-              "fieldName": "details",
-              "fieldValue": "={{ JSON.stringify({ platform: 'linkedin', external_id: $node['API - LinkedIn Publish'].json.id }) }}"
-            }
-          ]
+        "operation": "executeQuery",
+        "query": "INSERT INTO action_log (action_type, resource_type, resource_id, actor, actor_type, status, details, created_at) VALUES ('post_publish', 'post', $1, 'n8n', 'system', 'success', $2, NOW());",
+        "additionalFields": {
+          "queryParams": "={{ JSON.stringify([\n  $json.post_id,\n  JSON.stringify({ platform: 'linkedin', external_id: $json.external_post_id })\n]) }}"
         }
       },
-      "name": "DB - Log Action",
+      "name": "DB - Log Success",
       "type": "n8n-nodes-base.postgres",
-      "typeVersion": 1,
-      "position": [1050, 300],
+      "typeVersion": 2,
+      "position": [1850, 200],
       "credentials": {
         "postgres": "PostgreSQL - Marketing Hub"
       }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE posts SET status = 'failed', published_at = NULL WHERE id = $1;\nINSERT INTO action_log (action_type, resource_type, resource_id, actor, actor_type, status, details, created_at) VALUES ('post_publish', 'post', $1, 'n8n', 'system', 'error', $2, NOW());",
+        "additionalFields": {
+          "queryParams": "={{ JSON.stringify([\n  $('Transform - Prepare Post Payload').first().json.post_id || null,\n  JSON.stringify({ platform: 'linkedin', error: $input.first().json.message || 'Unknown error' })\n]) }}"
+        }
+      },
+      "name": "DB - Log & Mark Failed",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2,
+      "position": [1850, 400],
+      "credentials": {
+        "postgres": "PostgreSQL - Marketing Hub"
+      },
+      "executeOnError": true
     }
   ],
   "connections": {
@@ -137,15 +176,34 @@
       "main": [[{ "node": "Query - Scheduled LinkedIn Posts", "type": "main", "index": 0 }]]
     },
     "Query - Scheduled LinkedIn Posts": {
+      "main": [[{ "node": "Branch - Posts Exist?", "type": "main", "index": 0 }]]
+    },
+    "Branch - Posts Exist?": {
+      "main": [
+        [{ "node": "Split - Per Post", "type": "main", "index": 0 }],
+        []
+      ]
+    },
+    "Split - Per Post": {
+      "main": [[{ "node": "Transform - Prepare Post Payload", "type": "main", "index": 0 }]]
+    },
+    "Transform - Prepare Post Payload": {
       "main": [[{ "node": "API - LinkedIn Publish", "type": "main", "index": 0 }]]
     },
     "API - LinkedIn Publish": {
+      "main": [[{ "node": "Transform - Validate API Response", "type": "main", "index": 0 }]]
+    },
+    "Transform - Validate API Response": {
       "main": [[{ "node": "DB - Update Post Status", "type": "main", "index": 0 }]]
     },
     "DB - Update Post Status": {
-      "main": [[{ "node": "DB - Log Action", "type": "main", "index": 0 }]]
+      "main": [[{ "node": "DB - Log Success", "type": "main", "index": 0 }]]
     }
   },
   "active": false,
-  "settings": {}
+  "settings": {
+    "errorWorkflow": "",
+    "saveManualExecutions": true,
+    "callerPolicy": "workflowsFromSameOwner"
+  }
 }
